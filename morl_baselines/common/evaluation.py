@@ -18,14 +18,15 @@ from morl_baselines.common.performance_indicators import (
     sparsity,
 )
 from morl_baselines.common.weights import equally_spaced_weights
+from morl_baselines.common.logger import Logger
 
 
 def eval_mo(
-    agent,
-    env,
-    w: Optional[np.ndarray] = None,
-    scalarization=np.dot,
-    render: bool = False,
+        agent,
+        env,
+        w: Optional[np.ndarray] = None,
+        scalarization=np.dot,
+        render: bool = False,
 ) -> Tuple[float, float, np.ndarray, np.ndarray]:
     """Evaluates one episode of the agent in the environment.
 
@@ -68,11 +69,11 @@ def eval_mo(
 
 
 def eval_mo_reward_conditioned(
-    agent,
-    env,
-    scalarization=np.dot,
-    w: Optional[np.ndarray] = None,
-    render: bool = False,
+        agent,
+        env,
+        scalarization=np.dot,
+        w: Optional[np.ndarray] = None,
+        render: bool = False,
 ) -> Tuple[float, float, np.ndarray, np.ndarray]:
     """Evaluates one episode of the agent in the environment. This makes the assumption that the agent is conditioned on the accrued reward i.e. for ESR agent.
 
@@ -88,7 +89,8 @@ def eval_mo_reward_conditioned(
     """
     obs, _ = env.reset()
     done = False
-    vec_return, disc_vec_return = np.zeros(env.unwrapped.reward_space.shape[0]), np.zeros(env.unwrapped.reward_space.shape[0])
+    vec_return, disc_vec_return = np.zeros(env.unwrapped.reward_space.shape[0]), np.zeros(
+        env.unwrapped.reward_space.shape[0])
     gamma = 1.0
     while not done:
         if render:
@@ -115,7 +117,7 @@ def eval_mo_reward_conditioned(
 
 
 def policy_evaluation_mo(
-    agent, env, w: np.ndarray, scalarization=np.dot, rep: int = 5
+        agent, env, w: np.ndarray, scalarization=np.dot, rep: int = 5
 ) -> Tuple[float, float, np.ndarray, np.ndarray]:
     """Evaluates the value of a policy by running the policy for multiple episodes. Returns the average returns.
 
@@ -144,12 +146,13 @@ def policy_evaluation_mo(
 
 
 def log_all_multi_policy_metrics(
-    current_front: List[np.ndarray],
-    hv_ref_point: np.ndarray,
-    reward_dim: int,
-    global_step: int,
-    n_sample_weights: int,
-    ref_front: Optional[List[np.ndarray]] = None,
+        current_front: List[np.ndarray],
+        hv_ref_point: np.ndarray,
+        reward_dim: int,
+        global_step: int,
+        n_sample_weights: int,
+        ref_front: Optional[List[np.ndarray]] = None,
+        custom_logger: Optional[Logger] = None
 ):
     """Logs all metrics for multi-policy training.
 
@@ -168,6 +171,7 @@ def log_all_multi_policy_metrics(
         global_step: global step for logging
         n_sample_weights: number of weights to sample for EUM and MUL computation
         ref_front: reference front, if known
+        custom_logger: logger instance to add the logs to a custom logger instead of wandb
     """
     filtered_front = list(filter_pareto_dominated(current_front))
     hv = hypervolume(hv_ref_point, filtered_front)
@@ -175,21 +179,33 @@ def log_all_multi_policy_metrics(
     eum = expected_utility(filtered_front, weights_set=equally_spaced_weights(reward_dim, n_sample_weights))
     card = cardinality(filtered_front)
 
-    wandb.log(
-        {
-            "eval/hypervolume": hv,
-            "eval/sparsity": sp,
-            "eval/eum": eum,
-            "eval/cardinality": card,
-            "global_step": global_step,
-        },
-        commit=False,
-    )
-    front = wandb.Table(
-        columns=[f"objective_{i}" for i in range(1, reward_dim + 1)],
-        data=[p.tolist() for p in filtered_front],
-    )
-    wandb.log({"eval/front": front})
+    if not custom_logger:
+        wandb.log(
+            {
+                "eval/hypervolume": hv,
+                "eval/sparsity": sp,
+                "eval/eum": eum,
+                "eval/cardinality": card,
+                "global_step": global_step,
+            },
+            commit=False,
+        )
+    else:
+        custom_logger.record(key="eval/hypervolume", value=hv)
+        custom_logger.record(key="eval/sparsity", value=sp)
+        custom_logger.record(key="eval/eum", value=eum)
+        custom_logger.record(key="eval/cardinality", value=card)
+        custom_logger.record(key="global_step", value=global_step)
+
+    if not custom_logger:
+        front = wandb.Table(
+            columns=[f"objective_{i}" for i in range(1, reward_dim + 1)],
+            data=[p.tolist() for p in filtered_front],
+        )
+        wandb.log({"eval/front": front})
+    else:
+        front = {f"objective_{i}": [p[i - 1] for p in filtered_front] for i in range(1, reward_dim + 1)}
+        custom_logger.write_table(key="eval/front", table=front)
 
     # If PF is known, log the additional metrics
     if ref_front is not None:
@@ -199,7 +215,11 @@ def log_all_multi_policy_metrics(
             reference_set=ref_front,
             weights_set=get_reference_directions("energy", reward_dim, n_sample_weights).astype(np.float32),
         )
-        wandb.log({"eval/igd": generational_distance, "eval/mul": mul})
+        if not custom_logger:
+            wandb.log({"eval/igd": generational_distance, "eval/mul": mul})
+        else:
+            custom_logger.record(key="eval/igd", value=generational_distance)
+            custom_logger.record(key="eval/mul", value=mul)
 
 
 def seed_everything(seed: int):
@@ -221,12 +241,12 @@ def seed_everything(seed: int):
 
 
 def log_episode_info(
-    info: dict,
-    scalarization,
-    weights: Optional[np.ndarray],
-    global_timestep: int,
-    id: Optional[int] = None,
-    verbose: bool = True,
+        info: dict,
+        scalarization,
+        weights: Optional[np.ndarray],
+        global_timestep: int,
+        id: Optional[int] = None,
+        verbose: bool = True,
 ):
     """Logs information of the last episode from the info dict (automatically filled by the RecordStatisticsWrapper).
 

@@ -1,6 +1,6 @@
 """Pareto Q-Learning."""
 import numbers
-from typing import Callable, List, Optional
+from typing import Callable, List, Optional, Dict
 
 import gymnasium as gym
 import numpy as np
@@ -11,6 +11,7 @@ from morl_baselines.common.morl_algorithm import MOAgent
 from morl_baselines.common.pareto import get_non_dominated
 from morl_baselines.common.performance_indicators import hypervolume
 from morl_baselines.common.utils import linearly_decaying_value
+from morl_baselines.common.logger import Logger
 
 
 class PQL(MOAgent):
@@ -21,18 +22,18 @@ class PQL(MOAgent):
     """
 
     def __init__(
-        self,
-        env,
-        ref_point: np.ndarray,
-        gamma: float = 0.8,
-        initial_epsilon: float = 1.0,
-        epsilon_decay_steps: int = 100000,
-        final_epsilon: float = 0.1,
-        seed: Optional[int] = None,
-        project_name: str = "MORL-Baselines",
-        experiment_name: str = "Pareto Q-Learning",
-        wandb_entity: Optional[str] = None,
-        log: bool = True,
+            self,
+            env,
+            ref_point: np.ndarray,
+            gamma: float = 0.8,
+            initial_epsilon: float = 1.0,
+            epsilon_decay_steps: int = 100000,
+            final_epsilon: float = 0.1,
+            seed: Optional[int] = None,
+            project_name: str = "MORL-Baselines",
+            experiment_name: str = "Pareto Q-Learning",
+            logger: Optional[Logger] = None,
+            log: bool = True,
     ):
         """Initialize the Pareto Q-learning algorithm.
 
@@ -73,9 +74,9 @@ class PQL(MOAgent):
         elif type(self.env.observation_space) == gym.spaces.MultiDiscrete:
             self.env_shape = self.env.observation_space.nvec
         elif (
-            type(self.env.observation_space) == gym.spaces.Box
-            and self.env.observation_space.is_bounded(manner="both")
-            and issubclass(self.env.observation_space.dtype.type, numbers.Integral)
+                type(self.env.observation_space) == gym.spaces.Box
+                and self.env.observation_space.is_bounded(manner="both")
+                and issubclass(self.env.observation_space.dtype.type, numbers.Integral)
         ):
             low_bound = np.array(self.env.observation_space.low)
             high_bound = np.array(self.env.observation_space.high)
@@ -95,9 +96,10 @@ class PQL(MOAgent):
         self.project_name = project_name
         self.experiment_name = experiment_name
         self.log = log
-
-        if self.log:
-            self.setup_wandb(project_name=self.project_name, experiment_name=self.experiment_name, entity=wandb_entity)
+        self.logger = logger
+        #
+        # if self.log:
+        #     self.setup_wandb(project_name=self.project_name, experiment_name=self.experiment_name, entity=wandb_entity)
 
     def get_config(self) -> dict:
         """Get the configuration dictionary.
@@ -193,14 +195,14 @@ class PQL(MOAgent):
         return non_dominated
 
     def train(
-        self,
-        total_timesteps: int,
-        eval_env: gym.Env,
-        ref_point: Optional[np.ndarray] = None,
-        known_pareto_front: Optional[List[np.ndarray]] = None,
-        num_eval_weights_for_eval: int = 50,
-        log_every: Optional[int] = 10000,
-        action_eval: Optional[str] = "hypervolume",
+            self,
+            total_timesteps: int,
+            eval_env: gym.Env,
+            ref_point: Optional[np.ndarray] = None,
+            known_pareto_front: Optional[List[np.ndarray]] = None,
+            num_eval_weights_for_eval: int = 50,
+            log_every: Optional[int] = 10000,
+            action_eval: Optional[str] = "hypervolume",
     ):
         """Learn the Pareto front.
 
@@ -274,6 +276,10 @@ class PQL(MOAgent):
             )
 
         return self.get_local_pcs(state=0)
+
+    def register_additional_config(self, conf: Dict = {}) -> None:
+        for key, value in conf.items():
+            self.logger.write_param(key=key, value=value)
 
     def _eval_all_policies(self, env: gym.Env) -> List[np.ndarray]:
         """Evaluate all learned policies by tracking them."""

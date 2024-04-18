@@ -265,6 +265,7 @@ class PQL(MOAgent):
                         global_step=self.global_step,
                         n_sample_weights=num_eval_weights_for_eval,
                         ref_front=known_pareto_front,
+                        custom_logger=self.logger
                     )
 
             self.epsilon = linearly_decaying_value(

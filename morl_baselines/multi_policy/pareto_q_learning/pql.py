@@ -19,6 +19,7 @@ class PQL(MOAgent):
     Tabular method relying on pareto pruning.
     Paper: K. Van Moffaert and A. Nowé, “Multi-objective reinforcement learning using sets of pareto dominating policies,” The Journal of Machine Learning Research, vol. 15, no. 1, pp. 3483–3512, 2014.
     """
+    # Test
 
     def __init__(
         self,

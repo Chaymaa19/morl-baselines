@@ -23,7 +23,7 @@ class KVWriter:
         """
 
 
-class PrintWriter(KVWriter):
+class PrintOutputFormat(KVWriter):
     def write(self, key_values: Dict[str, Any], step: int) -> None:
         """
         Print all the metrics obtained in the current step

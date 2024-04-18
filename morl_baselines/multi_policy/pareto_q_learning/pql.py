@@ -280,7 +280,8 @@ class PQL(MOAgent):
 
     def register_additional_config(self, conf: Dict = {}) -> None:
         for key, value in conf.items():
-            self.logger.write_param(key=key, value=value)
+            if value is not None:
+                self.logger.write_param(key=key, value=value)
 
     def _eval_all_policies(self, env: gym.Env) -> List[np.ndarray]:
         """Evaluate all learned policies by tracking them."""

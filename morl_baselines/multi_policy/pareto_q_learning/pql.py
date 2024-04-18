@@ -50,7 +50,6 @@ class PQL(MOAgent):
             wandb_entity: The wandb entity used for logging.
             log: Whether to log or not.
         """
-        print("Test: creating pql instance")
         super().__init__(env, seed=seed)
         # Learning parameters
         self.gamma = gamma
@@ -278,6 +277,7 @@ class PQL(MOAgent):
                         ref_front=known_pareto_front,
                         custom_logger=self.logger
                     )
+                    self.logger.dump(step=self.global_step)
 
             self.epsilon = linearly_decaying_value(
                 self.initial_epsilon,

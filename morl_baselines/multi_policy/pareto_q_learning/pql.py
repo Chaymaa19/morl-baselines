@@ -97,9 +97,9 @@ class PQL(MOAgent):
         self.experiment_name = experiment_name
         self.log = log
         self.logger = logger
-        #
-        # if self.log:
-        #     self.setup_wandb(project_name=self.project_name, experiment_name=self.experiment_name, entity=wandb_entity)
+
+        if not self.logger:
+            self.setup_wandb(project_name=self.project_name, experiment_name=self.experiment_name)
 
     def get_config(self) -> dict:
         """Get the configuration dictionary.
@@ -227,16 +227,28 @@ class PQL(MOAgent):
         if ref_point is None:
             ref_point = self.ref_point
         if self.log:
-            self.register_additional_config(
-                {
-                    "total_timesteps": total_timesteps,
-                    "ref_point": ref_point.tolist(),
-                    "known_front": known_pareto_front,
-                    "num_eval_weights_for_eval": num_eval_weights_for_eval,
-                    "log_every": log_every,
-                    "action_eval": action_eval,
-                }
-            )
+            if not self.logger:
+                super().register_additional_config(
+                    {
+                        "total_timesteps": total_timesteps,
+                        "ref_point": ref_point.tolist(),
+                        "known_front": known_pareto_front,
+                        "num_eval_weights_for_eval": num_eval_weights_for_eval,
+                        "log_every": log_every,
+                        "action_eval": action_eval,
+                    }
+                )
+            else:
+                self.register_additional_config(
+                    {
+                        "total_timesteps": total_timesteps,
+                        "ref_point": ref_point.tolist(),
+                        "known_front": known_pareto_front,
+                        "num_eval_weights_for_eval": num_eval_weights_for_eval,
+                        "log_every": log_every,
+                        "action_eval": action_eval,
+                    }
+                )
 
         while self.global_step < total_timesteps:
             state, _ = self.env.reset()
@@ -280,8 +292,7 @@ class PQL(MOAgent):
 
     def register_additional_config(self, conf: Dict = {}) -> None:
         for key, value in conf.items():
-            if value is not None:
-                self.logger.write_param(key=key, value=value)
+            self.logger.write_param(key=key, value=value)
 
     def _eval_all_policies(self, env: gym.Env) -> List[np.ndarray]:
         """Evaluate all learned policies by tracking them."""

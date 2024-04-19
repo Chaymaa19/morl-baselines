@@ -6,6 +6,7 @@ from typing import Callable, List, Optional, Dict
 
 import gymnasium as gym
 import numpy as np
+import pickle
 import wandb
 
 from morl_baselines.common.evaluation import log_all_multi_policy_metrics
@@ -385,7 +386,7 @@ class PQL(MOAgent):
 
         # Save counts, non_dominated and avg_reward tables
         np.savetxt(fname=path + "/counts.txt", X=self.counts)
-        dump_json_file(path=path + "/non_dominated.json", data=self.non_dominated)
+        dump_pickle(path=path + "/non_dominated.pkl", data=self.non_dominated)
         np.savetxt(fname=path + "/avg_reward.txt", X=self.avg_reward)
 
     @classmethod
@@ -396,7 +397,7 @@ class PQL(MOAgent):
         # Load params dict, counts, non_dominated and avg_reward tables
         pql_params = load_json_file(path=checkpoint_path + "/pql_params.json")
         counts = np.loadtxt(fname=checkpoint_path + "/counts.txt")
-        non_dominated = load_json_file(path=checkpoint_path + "/non_dominated.json")
+        non_dominated = load_pickle(path=checkpoint_path + "/non_dominated.pkl")
         avg_reward = np.loadtxt(fname=checkpoint_path + "/avg_reward.txt")
 
         # Create instance of the algorithm with loaded params
@@ -419,6 +420,17 @@ class PQL(MOAgent):
 
 
 # TODO: move somewhere else
+def load_pickle(path):
+    with open(path, 'rb') as f:
+        loaded_data = pickle.load(f)
+    return loaded_data
+
+
+def dump_pickle(data, path):
+    with open(path, 'wb') as f:
+        pickle.dump(data, f)
+
+
 def load_json_file(path):
     with open(path, encoding="utf-8") as json_data:
         return json.load(json_data)

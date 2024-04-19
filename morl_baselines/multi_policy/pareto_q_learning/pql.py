@@ -381,9 +381,9 @@ class PQL(MOAgent):
             "epsilon_decay_steps": self.epsilon_decay_steps,
             "final_epsilon": self.final_epsilon,
             "ref_point": self.ref_point.tolist(),
-            "num_states": float(self.num_states),
-            "num_actions": float(self.num_actions),
-            "num_objectives": float(self.num_objectives)
+            "num_states": int(self.num_states),
+            "num_actions": int(self.num_actions),
+            "num_objectives": int(self.num_objectives)
         }
         dump_json_file(path=params_path, data=pql_params)
 

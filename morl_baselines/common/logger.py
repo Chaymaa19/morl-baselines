@@ -2,7 +2,6 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from collections import defaultdict
-from tabulate import tabulate
 
 
 class KVWriter:

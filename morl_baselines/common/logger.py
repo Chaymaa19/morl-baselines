@@ -2,7 +2,7 @@ from abc import abstractmethod
 from pathlib import Path
 from typing import Optional, List, Dict, Any
 from collections import defaultdict
-from pprint import pprint
+from tabulate import tabulate
 
 
 class KVWriter:
@@ -30,12 +30,12 @@ class PrintOutputFormat(KVWriter):
         :param key_values: logged metrics
         :param step: current step
         """
-        print(''.join(["*"] * 50))
-        print(''.join(["*"] * 20 + [f" Step {step} "] + ["*"] * 20))
-        print(''.join(["*"] * 50))
-        pprint(key_values)
-        print(''.join(["*"] * 50))
-        print(''.join(["\n" * 2]))
+        print(''.join(["-"] * 50))
+        print(''.join([" "] * 20 + [f" Step {step} "] + [" "] * 20))
+        print(''.join(["-"] * 50))
+        for key, value in key_values.items():
+            print(str(key).ljust(20), value)
+        print(''.join(["\n" * 3]))
 
     def close(self) -> None:
         pass

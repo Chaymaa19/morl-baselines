@@ -1,5 +1,7 @@
 """Pareto Q-Learning."""
 import numbers
+import os
+import json
 from typing import Callable, List, Optional, Dict
 
 import gymnasium as gym
@@ -30,8 +32,8 @@ class PQL(MOAgent):
             epsilon_decay_steps: int = 100000,
             final_epsilon: float = 0.1,
             seed: Optional[int] = None,
-            project_name: str = "MORL-Baselines",
-            experiment_name: str = "Pareto Q-Learning",
+            project_name: Optional[str] = "MORL-Baselines",
+            experiment_name: Optional[str] = "Pareto Q-Learning",
             logger: Optional[Logger] = None,
             log: bool = True,
     ):
@@ -92,12 +94,12 @@ class PQL(MOAgent):
         self.avg_reward = np.zeros((self.num_states, self.num_actions, self.num_objectives))
 
         # Logging
-        self.project_name = project_name
-        self.experiment_name = experiment_name
         self.log = log
         self.logger = logger
 
         if not self.logger:
+            self.project_name = project_name
+            self.experiment_name = experiment_name
             self.setup_wandb(project_name=self.project_name, experiment_name=self.experiment_name)
 
     def get_config(self) -> dict:
@@ -361,3 +363,70 @@ class PQL(MOAgent):
         q_sets = [self.get_q_set(state, action) for action in range(self.num_actions)]
         candidates = set().union(*q_sets)
         return get_non_dominated(candidates)
+
+    def save(self, path: str) -> None:
+        """
+        Save model checkpoint
+        :param path: dir where to save the config of the algorithm
+        """
+        # Create directory if it doesn't exist
+        os.makedirs(path, exist_ok=True)
+        # Save params in json file
+        params_path = path + "/pql_params.json"
+        pql_params = {
+            "gamma": self.gamma,
+            "epsilon": self.epsilon,
+            "initial_epsilon": self.initial_epsilon,
+            "epsilon_decay_steps": self.epsilon_decay_steps,
+            "final_epsilon": self.final_epsilon,
+            "ref_point": self.ref_point,
+            "num_actions": self.num_actions,
+            "env_shape": self.env_shape,
+            "num_states": self.num_states,
+        }
+        dump_json_file(path=params_path, data=pql_params)
+
+        # Save counts, non_dominated and avg_reward tables
+        np.savetxt(fname=path + "/counts.txt", X=self.counts)
+        dump_json_file(path=path + "/non_dominated.json", data=self.non_dominated)
+        np.savetxt(fname=path + "/avg_reward.txt", X=self.avg_reward)
+
+    @classmethod
+    def load(cls, checkpoint_path: str, env, new_logger: Optional[Logger] = None):
+        if not os.path.isdir(checkpoint_path):
+            raise FileNotFoundError(f"Checkpoint for model in {checkpoint_path} not found!")
+
+        # Load params dict, counts, non_dominated and avg_reward tables
+        pql_params = load_json_file(path=checkpoint_path + "/pql_params.json")
+        counts = np.loadtxt(fname=checkpoint_path + "/counts.txt")
+        non_dominated = load_json_file(path=checkpoint_path + "/non_dominated.json")
+        avg_reward = np.loadtxt(fname=checkpoint_path + "/avg_reward.txt")
+
+        # Create instance of the algorithm with loaded params
+        model = PQL(
+            env=env,
+            ref_point=pql_params["ref_point"],
+            gamma=pql_params["gamma"],
+            initial_epsilon=pql_params["initial_epsilon"],
+            epsilon_decay_steps=pql_params["epsilon_decay_steps"],
+            final_epsilon=pql_params["final_epsilon"],
+            logger=new_logger,
+            log=new_logger is not None  # Log only if new_logger is provided
+        )
+        # TODO: make setters instead of this
+        model.counts = counts
+        model.non_dominated = non_dominated
+        model.avg_reward = avg_reward
+
+        return model
+
+
+# TODO: move somewhere else
+def load_json_file(path):
+    with open(path, encoding="utf-8") as json_data:
+        return json.load(json_data)
+
+
+def dump_json_file(path, data):
+    with open(path, "w") as f:
+        json.dump(data, f)

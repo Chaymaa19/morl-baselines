@@ -408,7 +408,7 @@ class PQL(MOAgent):
         # Create instance of the algorithm with loaded params
         model = PQL(
             env=env,
-            ref_point=np.ndarray(pql_params["ref_point"]),
+            ref_point=np.array(pql_params["ref_point"]),
             gamma=pql_params["gamma"],
             initial_epsilon=pql_params["initial_epsilon"],
             epsilon_decay_steps=pql_params["epsilon_decay_steps"],

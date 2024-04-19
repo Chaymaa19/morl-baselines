@@ -379,10 +379,7 @@ class PQL(MOAgent):
             "initial_epsilon": self.initial_epsilon,
             "epsilon_decay_steps": self.epsilon_decay_steps,
             "final_epsilon": self.final_epsilon,
-            "ref_point": self.ref_point,
-            "num_actions": self.num_actions,
-            "env_shape": self.env_shape,
-            "num_states": self.num_states,
+            "ref_point": self.ref_point.tolist(),
         }
         dump_json_file(path=params_path, data=pql_params)
 
@@ -405,7 +402,7 @@ class PQL(MOAgent):
         # Create instance of the algorithm with loaded params
         model = PQL(
             env=env,
-            ref_point=pql_params["ref_point"],
+            ref_point=np.ndarray(pql_params["ref_point"]),
             gamma=pql_params["gamma"],
             initial_epsilon=pql_params["initial_epsilon"],
             epsilon_decay_steps=pql_params["epsilon_decay_steps"],

@@ -98,7 +98,7 @@ class PQL(MOAgent):
         self.log = log
         self.logger = logger
 
-        if not self.logger:
+        if self.log and not self.logger:
             self.project_name = project_name
             self.experiment_name = experiment_name
             self.setup_wandb(project_name=self.project_name, experiment_name=self.experiment_name)

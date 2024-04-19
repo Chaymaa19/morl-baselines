@@ -381,6 +381,9 @@ class PQL(MOAgent):
             "epsilon_decay_steps": self.epsilon_decay_steps,
             "final_epsilon": self.final_epsilon,
             "ref_point": self.ref_point.tolist(),
+            "num_states": self.num_states,
+            "num_actions": self.num_actions,
+            "num_objectives": self.num_objectives
         }
         dump_json_file(path=params_path, data=pql_params)
 
@@ -399,8 +402,8 @@ class PQL(MOAgent):
         counts = np.loadtxt(fname=checkpoint_path + "/counts.txt")
         non_dominated = load_pickle(path=checkpoint_path + "/non_dominated.pkl")
         avg_reward = np.loadtxt(fname=checkpoint_path + "/avg_reward.txt")
-        avg_reward = avg_reward.reshape(avg_reward.shape[0], avg_reward.shape[1] // avg_reward.shape[2],
-                                        avg_reward.shape[2])
+        avg_reward = avg_reward.reshape(pql_params["num_states"], pql_params["num_actions"],
+                                        pql_params["num_objectives"])
 
         # Create instance of the algorithm with loaded params
         model = PQL(

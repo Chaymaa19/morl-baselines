@@ -387,7 +387,7 @@ class PQL(MOAgent):
         # Save counts, non_dominated and avg_reward tables
         np.savetxt(fname=path + "/counts.txt", X=self.counts)
         dump_pickle(path=path + "/non_dominated.pkl", data=self.non_dominated)
-        np.savetxt(fname=path + "/avg_reward.txt", X=self.avg_reward)
+        np.savetxt(fname=path + "/avg_reward.txt", X=self.avg_reward.reshape(self.avg_reward.shape[0], -1))
 
     @classmethod
     def load(cls, checkpoint_path: str, env, new_logger: Optional[Logger] = None):
@@ -399,6 +399,8 @@ class PQL(MOAgent):
         counts = np.loadtxt(fname=checkpoint_path + "/counts.txt")
         non_dominated = load_pickle(path=checkpoint_path + "/non_dominated.pkl")
         avg_reward = np.loadtxt(fname=checkpoint_path + "/avg_reward.txt")
+        avg_reward = avg_reward.reshape(avg_reward.shape[0], avg_reward.shape[1] // avg_reward.shape[2],
+                                        avg_reward.shape[2])
 
         # Create instance of the algorithm with loaded params
         model = PQL(

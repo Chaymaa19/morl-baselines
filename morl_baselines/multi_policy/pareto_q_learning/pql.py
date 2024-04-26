@@ -280,8 +280,7 @@ class PQL(MOAgent):
                 next_state = int(np.ravel_multi_index(next_state, self.env_shape))
 
                 self.counts[state, action] += 1
-                if not (terminated or truncated):
-                    self.non_dominated[state][action] = self.calc_non_dominated(next_state)
+                self.non_dominated[state][action] = self.calc_non_dominated(next_state)
                 self.avg_reward[state, action] += (reward - self.avg_reward[state, action]) / self.counts[state, action]
                 state = next_state
 

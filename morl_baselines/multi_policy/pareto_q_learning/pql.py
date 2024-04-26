@@ -163,10 +163,6 @@ class PQL(MOAgent):
         Returns:
             A set of Q vectors.
         """
-        if hasattr(self.env, 'action_masks'):
-            action_mask = self.env.action_masks()
-        else:
-            action_mask = None
         nd_array = np.array(list(self.non_dominated[state][action]))
         q_array = self.avg_reward[state, action] + self.gamma * nd_array
         return {tuple(vec) for vec in q_array}
@@ -181,21 +177,10 @@ class PQL(MOAgent):
         Returns:
             int: The selected action.
         """
-        if hasattr(self.env, 'action_masks'):
-            action_mask = self.env.action_masks()
-        else:
-            action_mask = None
         if self.np_random.uniform(0, 1) < self.epsilon:
-            if not action_mask:
-                return self.np_random.integers(self.num_actions)
-            else:
-                # Find indices where action mask is 1 and sample from them
-                valid_actions = np.where(action_mask == 1)[0]
-                return np.random.choice(valid_actions)
+            return self.np_random.integers(self.num_actions)
         else:
             action_scores = score_func(state)
-            if action_mask:
-                action_scores = action_scores[action_mask == 1]
             return self.np_random.choice(np.argwhere(action_scores == np.max(action_scores)).flatten())
 
     def calc_non_dominated(self, state: int):

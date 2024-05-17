@@ -418,6 +418,15 @@ class PQL(MOAgent):
         candidates = set().union(*q_sets)
         return get_non_dominated(candidates)
 
+    def get_local_pcs_from_state(self, state):
+        """
+        Get the pareto coverage set from an array-like state
+        :param state: The state to get a local PCS for. (array-like)
+        :return: A set of pareto optimal vectors
+        """
+        int_state = np.ravel_multi_index(state, self.env_shape)
+        return self.get_local_pcs(int_state)
+
     def save(self, path: str) -> None:
         """
         Save model checkpoint

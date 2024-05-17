@@ -353,6 +353,58 @@ class PQL(MOAgent):
 
         return total_rew
 
+    def get_policy_from_state(self, vec, current_state, previous_reward: np.ndarray, env: gym.Env, tol=1e-3) -> tuple:
+        """
+        Get the set of actions used in the tracked policy along with the total reward obtained
+        :param vec: array_like with the return vector to track.
+        :param current_state: Current state in the environment.
+        :param previous_reward: Cumulative reward obtained until the current state
+        :param env: The environment to track the policy in.
+        :param tol: The tolerance for the return vector. (Default value = 1e-3)
+        :return: list of actions taken and total
+        """
+        target = np.array(vec)
+        state = current_state
+        terminated = False
+        truncated = False
+        total_rew = previous_reward
+        current_gamma = 1.0
+        actions_list = []
+
+        while not (terminated or truncated):
+            state = np.ravel_multi_index(state, self.env_shape)
+            closest_dist = np.inf
+            closest_action = 0
+            found_action = False
+            new_target = target
+
+            for action in range(self.num_actions):
+                im_rew = self.avg_reward[state, action]
+                non_dominated_set = self.non_dominated[state][action]
+
+                for q in non_dominated_set:
+                    q = np.array(q)
+                    dist = np.sum(np.abs(self.gamma * q + im_rew - target))
+                    if dist < closest_dist:
+                        closest_dist = dist
+                        closest_action = action
+                        new_target = q
+
+                        if dist < tol:
+                            found_action = True
+                            break
+
+                if found_action:
+                    break
+
+            state, reward, terminated, truncated, _ = env.step(closest_action)
+            actions_list.append(closest_action)
+            total_rew += current_gamma * reward
+            current_gamma *= self.gamma
+            target = new_target
+
+        return actions_list, total_rew
+
     def get_local_pcs(self, state: int = 0):
         """Collect the local PCS in a given state.
 

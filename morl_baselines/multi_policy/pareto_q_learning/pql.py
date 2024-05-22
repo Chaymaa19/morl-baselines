@@ -288,7 +288,8 @@ class PQL(MOAgent):
 
                 if self.log and self.global_step % log_every == 0:
                     begin_time = time.time()
-                    pf = self._eval_all_policies(eval_env)
+                    #pf = self._eval_all_policies(eval_env)
+                    pf = self.get_local_pcs(0)
                     eval_time = time.time() - begin_time
                     log_all_multi_policy_metrics(
                         current_front=pf,

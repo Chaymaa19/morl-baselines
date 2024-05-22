@@ -298,6 +298,7 @@ class PQL(MOAgent):
                     )
                     self.logger.dump(step=self.global_step)
                     num_episodes = 0
+                    step_time = 0
                     iteration_begin_time = time.time()
 
             self.epsilon = linearly_decaying_value(

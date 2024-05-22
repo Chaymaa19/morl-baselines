@@ -259,6 +259,7 @@ class PQL(MOAgent):
         iteration_begin_time = time.time()
         step_time = 0
         update_time = 0
+        epsilon_decay_time = 0
         while self.global_step < total_timesteps:
             begin_step = time.time()
             state, _ = self.env.reset()
@@ -277,16 +278,18 @@ class PQL(MOAgent):
                 self.global_step += 1
                 next_state = int(np.ravel_multi_index(next_state, self.env_shape))
 
-                begin_step = time.time()
+                begin_time = time.time()
                 self.counts[state, action] += 1
                 if not (terminated or truncated):
                     self.non_dominated[state][action] = self.calc_non_dominated(next_state)
                 self.avg_reward[state, action] += (reward - self.avg_reward[state, action]) / self.counts[state, action]
-                update_time += (time.time() - begin_step)
+                update_time += (time.time() - begin_time)
                 state = next_state
 
                 if self.log and self.global_step % log_every == 0:
+                    begin_time = time.time()
                     pf = self._eval_all_policies(eval_env)
+                    eval_time = time.time() - begin_time
                     log_all_multi_policy_metrics(
                         current_front=pf,
                         hv_ref_point=ref_point,
@@ -299,6 +302,8 @@ class PQL(MOAgent):
                         elapsed_time=time.time() - train_begin_time,
                         step_time=step_time,
                         update_time=update_time,
+                        eval_time=eval_time,
+                        epsilon_decay_time=epsilon_decay_time,
                         ref_front=known_pareto_front,
                         custom_logger=self.logger
                     )
@@ -306,7 +311,10 @@ class PQL(MOAgent):
                     num_episodes = 0
                     step_time = 0
                     iteration_begin_time = time.time()
+                    update_time = 0
+                    epsilon_decay_time = 0
 
+            begin_time = time.time()
             self.epsilon = linearly_decaying_value(
                 self.initial_epsilon,
                 self.epsilon_decay_steps,
@@ -314,6 +322,7 @@ class PQL(MOAgent):
                 0,
                 self.final_epsilon,
             )
+            epsilon_decay_time += (time.time() - begin_time)
 
         return self.get_local_pcs(state=0)
 

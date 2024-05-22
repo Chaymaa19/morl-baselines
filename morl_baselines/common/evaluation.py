@@ -157,6 +157,8 @@ def log_all_multi_policy_metrics(
         elapsed_time: float = None,
         step_time: float = None,
         update_time: float = None,
+        eval_time: float = None,
+        epsilon_decay_time: float = None,
         ref_front: Optional[List[np.ndarray]] = None,
         custom_logger: Optional[Logger] = None
 ):
@@ -207,6 +209,8 @@ def log_all_multi_policy_metrics(
         custom_logger.record(key="metrics/iteration_time", value=iteration_time)
         custom_logger.record(key="metrics/iteration_time_doing_steps", value=step_time)
         custom_logger.record(key="metrics/iteration_time_updating", value=update_time)
+        custom_logger.record(key="metrics/iteration_time_eval", value=eval_time)
+        custom_logger.record(key="metrics/iteration_time_epsilon_decay", value=epsilon_decay_time)
         custom_logger.record(key="metrics/total_elapsed_time", value=elapsed_time)
 
     if not custom_logger:

@@ -258,8 +258,11 @@ class PQL(MOAgent):
         train_begin_time = time.time()
         iteration_begin_time = time.time()
         step_time = 0
+        update_time = 0
         while self.global_step < total_timesteps:
+            begin_step = time.time()
             state, _ = self.env.reset()
+            step_time += (time.time() - begin_step)
             num_episodes += 1
             train_total_episodes += 1
             state = int(np.ravel_multi_index(state, self.env_shape))
@@ -274,10 +277,12 @@ class PQL(MOAgent):
                 self.global_step += 1
                 next_state = int(np.ravel_multi_index(next_state, self.env_shape))
 
+                begin_step = time.time()
                 self.counts[state, action] += 1
                 if not (terminated or truncated):
                     self.non_dominated[state][action] = self.calc_non_dominated(next_state)
                 self.avg_reward[state, action] += (reward - self.avg_reward[state, action]) / self.counts[state, action]
+                update_time += (time.time() - begin_step)
                 state = next_state
 
                 if self.log and self.global_step % log_every == 0:
@@ -293,6 +298,7 @@ class PQL(MOAgent):
                         iteration_time=time.time() - iteration_begin_time,
                         elapsed_time=time.time() - train_begin_time,
                         step_time=step_time,
+                        update_time=update_time,
                         ref_front=known_pareto_front,
                         custom_logger=self.logger
                     )

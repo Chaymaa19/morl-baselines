@@ -212,6 +212,7 @@ def log_all_multi_policy_metrics(
         custom_logger.record(key="metrics/iteration_time_updating", value=update_time)
         custom_logger.record(key="metrics/iteration_time_eval", value=eval_time)
         custom_logger.record(key="metrics/iteration_time_epsilon_decay", value=epsilon_decay_time)
+        custom_logger.record(key="metrics/iteration_time_computing_metrics", value=time_logging_metrics)
         custom_logger.record(key="metrics/total_elapsed_time", value=elapsed_time)
 
     if not custom_logger:

@@ -257,6 +257,7 @@ class PQL(MOAgent):
         train_total_episodes = 0
         train_begin_time = time.time()
         iteration_begin_time = time.time()
+        step_time = 0
         while self.global_step < total_timesteps:
             state, _ = self.env.reset()
             num_episodes += 1
@@ -267,7 +268,9 @@ class PQL(MOAgent):
 
             while not (terminated or truncated) and self.global_step < total_timesteps:
                 action = self.select_action(state, score_func)
+                begin_step = time.time()
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
+                step_time += (time.time() - begin_step)
                 self.global_step += 1
                 next_state = int(np.ravel_multi_index(next_state, self.env_shape))
 
@@ -289,6 +292,7 @@ class PQL(MOAgent):
                         train_total_episodes=train_total_episodes,
                         iteration_time=time.time() - iteration_begin_time,
                         elapsed_time=time.time() - train_begin_time,
+                        step_time=step_time,
                         ref_front=known_pareto_front,
                         custom_logger=self.logger
                     )

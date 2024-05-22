@@ -29,11 +29,11 @@ class PrintOutputFormat(KVWriter):
         :param key_values: logged metrics
         :param step: current step
         """
-        print(''.join(["-"] * 50))
-        print(''.join([" "] * 20 + [f" Step {step} "] + [" "] * 20))
-        print(''.join(["-"] * 50))
+        print(''.join(["-"] * 70))
+        print(''.join([" "] * 30 + [f" Step {step} "] + [" "] * 30))
+        print(''.join(["-"] * 70))
         for key, value in key_values.items():
-            print(str(key).ljust(20), value)
+            print(str(key).ljust(50), value)
         print(''.join(["\n" * 3]))
 
     def close(self) -> None:

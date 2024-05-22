@@ -155,6 +155,7 @@ def log_all_multi_policy_metrics(
         train_total_episodes: int = None,
         iteration_time: float = None,
         elapsed_time: float = None,
+        step_time: float = None,
         ref_front: Optional[List[np.ndarray]] = None,
         custom_logger: Optional[Logger] = None
 ):
@@ -203,6 +204,7 @@ def log_all_multi_policy_metrics(
         custom_logger.record(key="metrics/iteration_episodes", value=num_episodes)
         custom_logger.record(key="metrics/total_episodes", value=train_total_episodes)
         custom_logger.record(key="metrics/iteration_time", value=iteration_time)
+        custom_logger.record(key="metrics/iteration_time_doing_steps", value=step_time)
         custom_logger.record(key="metrics/total_elapsed_time", value=elapsed_time)
 
     if not custom_logger:

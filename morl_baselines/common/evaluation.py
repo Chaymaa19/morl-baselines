@@ -159,6 +159,7 @@ def log_all_multi_policy_metrics(
         update_time: float = None,
         eval_time: float = None,
         epsilon_decay_time: float = None,
+        time_logging_metrics: float = None,
         ref_front: Optional[List[np.ndarray]] = None,
         custom_logger: Optional[Logger] = None
 ):

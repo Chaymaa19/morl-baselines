@@ -2,6 +2,7 @@
 import numbers
 import os
 import json
+import time
 from typing import Callable, List, Optional, Dict
 
 import gymnasium as gym
@@ -252,8 +253,14 @@ class PQL(MOAgent):
                     }
                 )
 
+        num_episodes = 0
+        train_total_episodes = 0
+        train_begin_time = time.time()
+        iteration_begin_time = time.time()
         while self.global_step < total_timesteps:
             state, _ = self.env.reset()
+            num_episodes += 1
+            train_total_episodes += 1
             state = int(np.ravel_multi_index(state, self.env_shape))
             terminated = False
             truncated = False
@@ -278,10 +285,16 @@ class PQL(MOAgent):
                         reward_dim=self.reward_dim,
                         global_step=self.global_step,
                         n_sample_weights=num_eval_weights_for_eval,
+                        num_episodes=num_episodes,
+                        train_total_episodes=train_total_episodes,
+                        iteration_time=time.time() - iteration_begin_time,
+                        elapsed_time=time.time() - train_begin_time,
                         ref_front=known_pareto_front,
                         custom_logger=self.logger
                     )
                     self.logger.dump(step=self.global_step)
+                    num_episodes = 0
+                    iteration_begin_time = time.time()
 
             self.epsilon = linearly_decaying_value(
                 self.initial_epsilon,

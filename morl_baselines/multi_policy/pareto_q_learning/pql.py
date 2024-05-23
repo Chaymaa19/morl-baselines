@@ -303,6 +303,11 @@ class PQL(MOAgent):
                         custom_logger=self.logger
                     )
                     self.logger.dump(step=self.global_step)
+                    num_episodes = 0
+                    step_time = 0
+                    iteration_begin_time = time.time()
+                    update_time = 0
+                    epsilon_decay_time = 0
 
                 if self.log and self.global_step % log_every == 0:
                     begin_time = time.time()
@@ -321,11 +326,7 @@ class PQL(MOAgent):
                     )
                     time_logging_metrics = time.time() - begin_time
                     self.logger.dump(step=self.global_step)
-                    num_episodes = 0
-                    step_time = 0
-                    iteration_begin_time = time.time()
-                    update_time = 0
-                    epsilon_decay_time = 0
+
 
             begin_time = time.time()
             self.epsilon = linearly_decaying_value(

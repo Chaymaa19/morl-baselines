@@ -300,6 +300,7 @@ class PQL(MOAgent):
                         eval_time=0,
                         time_logging_metrics=time_logging_metrics,
                         epsilon_decay_time=epsilon_decay_time,
+                        custom_logger=self.logger
                     )
 
                 if self.log and self.global_step % log_every == 0:

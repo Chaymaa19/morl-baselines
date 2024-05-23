@@ -302,6 +302,7 @@ class PQL(MOAgent):
                         epsilon_decay_time=epsilon_decay_time,
                         custom_logger=self.logger
                     )
+                    self.logger.dump(step=self.global_step)
 
                 if self.log and self.global_step % log_every == 0:
                     begin_time = time.time()

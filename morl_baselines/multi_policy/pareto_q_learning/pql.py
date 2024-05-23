@@ -10,7 +10,7 @@ import numpy as np
 import pickle
 import wandb
 
-from morl_baselines.common.evaluation import log_all_multi_policy_metrics
+from morl_baselines.common.evaluation import log_all_multi_policy_metrics, log_all_progress_metrics
 from morl_baselines.common.morl_algorithm import MOAgent
 from morl_baselines.common.pareto import get_non_dominated
 from morl_baselines.common.performance_indicators import hypervolume
@@ -205,6 +205,7 @@ class PQL(MOAgent):
             known_pareto_front: Optional[List[np.ndarray]] = None,
             num_eval_weights_for_eval: int = 50,
             log_every: Optional[int] = 10000,
+            log_progress_every: Optional[int] = 10000,
             action_eval: Optional[str] = "hypervolume",
     ):
         """Learn the Pareto front.
@@ -287,6 +288,20 @@ class PQL(MOAgent):
                 update_time += (time.time() - begin_time)
                 state = next_state
 
+                if self.log and self.global_step % log_progress_every == 0:
+                    log_all_progress_metrics(
+                        global_step=self.global_step,
+                        num_episodes=num_episodes,
+                        train_total_episodes=train_total_episodes,
+                        iteration_time=time.time() - iteration_begin_time,
+                        elapsed_time=time.time() - train_begin_time,
+                        step_time=step_time,
+                        update_time=update_time,
+                        eval_time=0,
+                        time_logging_metrics=time_logging_metrics,
+                        epsilon_decay_time=epsilon_decay_time,
+                    )
+
                 if self.log and self.global_step % log_every == 0:
                     begin_time = time.time()
                     #pf = self._eval_all_policies(eval_env)
@@ -299,15 +314,6 @@ class PQL(MOAgent):
                         reward_dim=self.reward_dim,
                         global_step=self.global_step,
                         n_sample_weights=num_eval_weights_for_eval,
-                        num_episodes=num_episodes,
-                        train_total_episodes=train_total_episodes,
-                        iteration_time=time.time() - iteration_begin_time,
-                        elapsed_time=time.time() - train_begin_time,
-                        step_time=step_time,
-                        update_time=update_time,
-                        eval_time=eval_time,
-                        time_logging_metrics=time_logging_metrics,
-                        epsilon_decay_time=epsilon_decay_time,
                         ref_front=known_pareto_front,
                         custom_logger=self.logger
                     )

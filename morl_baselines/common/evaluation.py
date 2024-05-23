@@ -151,15 +151,6 @@ def log_all_multi_policy_metrics(
         reward_dim: int,
         global_step: int,
         n_sample_weights: int,
-        num_episodes: int = None,
-        train_total_episodes: int = None,
-        iteration_time: float = None,
-        elapsed_time: float = None,
-        step_time: float = None,
-        update_time: float = None,
-        eval_time: float = None,
-        epsilon_decay_time: float = None,
-        time_logging_metrics: float = None,
         ref_front: Optional[List[np.ndarray]] = None,
         custom_logger: Optional[Logger] = None
 ):
@@ -204,16 +195,6 @@ def log_all_multi_policy_metrics(
         custom_logger.record(key="eval/sparsity", value=sp)
         custom_logger.record(key="eval/eum", value=eum)
         custom_logger.record(key="eval/cardinality", value=card)
-        custom_logger.record(key="global_step", value=global_step)
-        custom_logger.record(key="metrics/iteration_episodes", value=num_episodes)
-        custom_logger.record(key="metrics/total_episodes", value=train_total_episodes)
-        custom_logger.record(key="metrics/iteration_time", value=iteration_time)
-        custom_logger.record(key="metrics/iteration_time_doing_steps", value=step_time)
-        custom_logger.record(key="metrics/iteration_time_updating", value=update_time)
-        custom_logger.record(key="metrics/iteration_time_eval", value=eval_time)
-        custom_logger.record(key="metrics/iteration_time_epsilon_decay", value=epsilon_decay_time)
-        custom_logger.record(key="metrics/iteration_time_computing_metrics", value=time_logging_metrics)
-        custom_logger.record(key="metrics/total_elapsed_time", value=elapsed_time)
 
     if not custom_logger:
         front = wandb.Table(
@@ -238,6 +219,31 @@ def log_all_multi_policy_metrics(
         else:
             custom_logger.record(key="eval/igd", value=generational_distance)
             custom_logger.record(key="eval/mul", value=mul)
+
+
+def log_all_progress_metrics(
+        global_step: int,
+        num_episodes: int = None,
+        train_total_episodes: int = None,
+        iteration_time: float = None,
+        elapsed_time: float = None,
+        step_time: float = None,
+        update_time: float = None,
+        eval_time: float = None,
+        epsilon_decay_time: float = None,
+        time_logging_metrics: float = None,
+        custom_logger: Optional[Logger] = None
+):
+    custom_logger.record(key="global_step", value=global_step)
+    custom_logger.record(key="metrics/iteration_episodes", value=num_episodes)
+    custom_logger.record(key="metrics/total_episodes", value=train_total_episodes)
+    custom_logger.record(key="metrics/iteration_time", value=iteration_time)
+    custom_logger.record(key="metrics/iteration_time_doing_steps", value=step_time)
+    custom_logger.record(key="metrics/iteration_time_updating", value=update_time)
+    custom_logger.record(key="metrics/iteration_time_eval", value=eval_time)
+    custom_logger.record(key="metrics/iteration_time_epsilon_decay", value=epsilon_decay_time)
+    custom_logger.record(key="metrics/iteration_time_computing_metrics", value=time_logging_metrics)
+    custom_logger.record(key="metrics/total_elapsed_time", value=elapsed_time)
 
 
 def seed_everything(seed: int):

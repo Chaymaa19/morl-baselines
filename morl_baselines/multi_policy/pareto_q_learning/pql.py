@@ -262,6 +262,7 @@ class PQL(MOAgent):
         update_time = 0
         epsilon_decay_time = 0
         time_logging_metrics = -1
+        time_selecting_action = 0
         while self.global_step < total_timesteps:
             begin_step = time.time()
             state, _ = self.env.reset()
@@ -273,7 +274,9 @@ class PQL(MOAgent):
             truncated = False
 
             while not (terminated or truncated) and self.global_step < total_timesteps:
+                begin_time = time.time()
                 action = self.select_action(state, score_func)
+                time_selecting_action = time.time() - begin_time
                 begin_step = time.time()
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
                 step_time += (time.time() - begin_step)
@@ -289,6 +292,7 @@ class PQL(MOAgent):
                 state = next_state
 
                 if self.log and self.global_step % log_progress_every == 0:
+                    begin_time = time.time()
                     log_all_progress_metrics(
                         global_step=self.global_step,
                         num_episodes=num_episodes,
@@ -299,9 +303,11 @@ class PQL(MOAgent):
                         update_time=update_time,
                         eval_time=0,
                         time_logging_metrics=time_logging_metrics,
+                        time_selecting_action=time_selecting_action,
                         epsilon_decay_time=epsilon_decay_time,
                         custom_logger=self.logger
                     )
+                    time_logging_metrics = time.time() - begin_time
                     self.logger.dump(step=self.global_step)
                     num_episodes = 0
                     step_time = 0
@@ -311,10 +317,10 @@ class PQL(MOAgent):
 
                 if self.log and self.global_step % log_every == 0:
                     begin_time = time.time()
-                    #pf = self._eval_all_policies(eval_env)
+                    # pf = self._eval_all_policies(eval_env)
                     pf = list(self.get_local_pcs(0))
                     eval_time = time.time() - begin_time
-                    begin_time = time.time()
+
                     log_all_multi_policy_metrics(
                         current_front=pf,
                         hv_ref_point=ref_point,
@@ -324,9 +330,7 @@ class PQL(MOAgent):
                         ref_front=known_pareto_front,
                         custom_logger=self.logger
                     )
-                    time_logging_metrics = time.time() - begin_time
                     self.logger.dump(step=self.global_step)
-
 
             begin_time = time.time()
             self.epsilon = linearly_decaying_value(

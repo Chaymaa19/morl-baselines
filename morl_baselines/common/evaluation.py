@@ -232,6 +232,7 @@ def log_all_progress_metrics(
         eval_time: float = None,
         epsilon_decay_time: float = None,
         time_logging_metrics: float = None,
+        time_selecting_action: float = None,
         custom_logger: Optional[Logger] = None
 ):
     custom_logger.record(key="global_step", value=global_step)
@@ -243,6 +244,7 @@ def log_all_progress_metrics(
     custom_logger.record(key="metrics/iteration_time_eval", value=eval_time)
     custom_logger.record(key="metrics/iteration_time_epsilon_decay", value=epsilon_decay_time)
     custom_logger.record(key="metrics/iteration_time_computing_metrics", value=time_logging_metrics)
+    custom_logger.record(key="metrics/iteration_time_selecting_action", value=time_selecting_action)
     custom_logger.record(key="metrics/total_elapsed_time", value=elapsed_time)
 
 

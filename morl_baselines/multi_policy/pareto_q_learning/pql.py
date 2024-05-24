@@ -276,7 +276,7 @@ class PQL(MOAgent):
             while not (terminated or truncated) and self.global_step < total_timesteps:
                 begin_time = time.time()
                 action = self.select_action(state, score_func)
-                time_selecting_action = time.time() - begin_time
+                time_selecting_action += (time.time() - begin_time)
                 begin_step = time.time()
                 next_state, reward, terminated, truncated, _ = self.env.step(action)
                 step_time += (time.time() - begin_step)
@@ -313,6 +313,7 @@ class PQL(MOAgent):
                     step_time = 0
                     iteration_begin_time = time.time()
                     update_time = 0
+                    time_selecting_action = 0
                     epsilon_decay_time = 0
 
                 if self.log and self.global_step % log_every == 0:

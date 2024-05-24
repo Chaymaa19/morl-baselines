@@ -223,6 +223,7 @@ def log_all_multi_policy_metrics(
 
 def log_all_progress_metrics(
         global_step: int,
+        num_pf_solutions: float = None,
         num_episodes: int = None,
         train_total_episodes: int = None,
         iteration_time: float = None,
@@ -236,6 +237,7 @@ def log_all_progress_metrics(
         custom_logger: Optional[Logger] = None
 ):
     custom_logger.record(key="global_step", value=global_step)
+    custom_logger.record(key="eval/num_pf_solutions", value=num_pf_solutions)
     custom_logger.record(key="metrics/iteration_episodes", value=num_episodes)
     custom_logger.record(key="metrics/total_episodes", value=train_total_episodes)
     custom_logger.record(key="metrics/iteration_time", value=iteration_time)

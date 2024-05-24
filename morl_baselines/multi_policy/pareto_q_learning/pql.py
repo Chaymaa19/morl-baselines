@@ -295,6 +295,7 @@ class PQL(MOAgent):
                     begin_time = time.time()
                     log_all_progress_metrics(
                         global_step=self.global_step,
+                        num_pf_solutions=len(self.get_local_pcs(0)),
                         num_episodes=num_episodes,
                         train_total_episodes=train_total_episodes,
                         iteration_time=time.time() - iteration_begin_time,

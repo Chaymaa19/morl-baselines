@@ -2,6 +2,7 @@
 import numbers
 import os
 import json
+import shelve
 import time
 from typing import Callable, List, Optional, Dict
 
@@ -89,11 +90,12 @@ class PQL(MOAgent):
 
         self.num_states = np.prod(self.env_shape)
         self.num_objectives = self.env.reward_space.shape[0]
-        self.counts = np.zeros((self.num_states, self.num_actions))
+        self.counts = np.zeros((self.num_states, self.num_actions), dtype=np.int16)
         self.non_dominated = [
-            [{tuple(np.zeros(self.num_objectives))} for _ in range(self.num_actions)] for _ in range(self.num_states)
+            [{tuple(np.zeros(self.num_objectives, dtype=np.float16))} for _ in range(self.num_actions)] for _ in
+            range(self.num_states)
         ]
-        self.avg_reward = np.zeros((self.num_states, self.num_actions, self.num_objectives))
+        self.avg_reward = np.zeros((self.num_states, self.num_actions, self.num_objectives), dtype=np.float16)
 
         # Logging
         self.log = log
@@ -503,12 +505,12 @@ class PQL(MOAgent):
         dump_json_file(path=params_path, data=pql_params)
 
         # Save counts, non_dominated and avg_reward tables
-        np.savetxt(fname=path + "/counts.txt", X=self.counts)
-        dump_pickle(path=path + "/non_dominated.pkl", data=self.non_dominated)
-        np.savetxt(fname=path + "/avg_reward.txt", X=self.avg_reward.reshape(self.avg_reward.shape[0], -1))
+        np.save(file=path + "/counts", arr=self.counts)
+        dump_non_dominated_in_shelve(path=path + "/non_dominated.shelf", data=self.non_dominated)
+        np.save(file=path + "/avg_reward", arr=self.avg_reward.reshape(self.avg_reward.shape[0], -1))
 
     @classmethod
-    def load(cls, checkpoint_path: str, env, new_logger: Optional[Logger] = None):
+    def load_old(cls, checkpoint_path: str, env, new_logger: Optional[Logger] = None):
         if not os.path.isdir(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint for model in {checkpoint_path} not found!")
 
@@ -517,6 +519,37 @@ class PQL(MOAgent):
         counts = np.loadtxt(fname=checkpoint_path + "/counts.txt")
         non_dominated = load_pickle(path=checkpoint_path + "/non_dominated.pkl")
         avg_reward = np.loadtxt(fname=checkpoint_path + "/avg_reward.txt")
+        avg_reward = avg_reward.reshape(pql_params["num_states"], pql_params["num_actions"],
+                                        pql_params["num_objectives"])
+
+        # Create instance of the algorithm with loaded params
+        model = PQL(
+            env=env,
+            ref_point=np.array(pql_params["ref_point"]),
+            gamma=pql_params["gamma"],
+            initial_epsilon=pql_params["initial_epsilon"],
+            epsilon_decay_steps=pql_params["epsilon_decay_steps"],
+            final_epsilon=pql_params["final_epsilon"],
+            logger=new_logger,
+            log=new_logger is not None  # Log only if new_logger is provided
+        )
+        # TODO: make setters instead of this
+        model.counts = counts
+        model.non_dominated = non_dominated
+        model.avg_reward = avg_reward
+
+        return model
+
+    @classmethod
+    def load(cls, checkpoint_path: str, env, new_logger: Optional[Logger] = None):
+        if not os.path.isdir(checkpoint_path):
+            raise FileNotFoundError(f"Checkpoint for model in {checkpoint_path} not found!")
+
+        # Load params dict, counts, non_dominated and avg_reward tables
+        pql_params = load_json_file(path=checkpoint_path + "/pql_params.json")
+        counts = np.load(file=checkpoint_path + "/counts.npy", mmap_mode="r")
+        non_dominated = load_non_dominated_in_shelve(path=checkpoint_path + "/non_dominated.shelf")
+        avg_reward = np.load(file=checkpoint_path + "/avg_reward.npy", mmap_mode="r")
         avg_reward = avg_reward.reshape(pql_params["num_states"], pql_params["num_actions"],
                                         pql_params["num_objectives"])
 
@@ -549,6 +582,16 @@ def load_pickle(path):
 def dump_pickle(data, path):
     with open(path, 'wb') as f:
         pickle.dump(data, f)
+
+
+def dump_non_dominated_in_shelve(path, data):
+    with shelve.open(path, 'n') as shelf:
+        shelf['non_dominated'] = data
+
+
+def load_non_dominated_in_shelve(path):
+    with shelve.open(path, 'r') as shelf:
+        return shelf['non_dominated']
 
 
 def load_json_file(path):

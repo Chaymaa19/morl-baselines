@@ -94,12 +94,12 @@ class PQL(MOAgent):
         self.num_objectives = self.env.reward_space.shape[0]
 
         if not is_loaded_checkpoint:
-            self.counts = np.zeros((self.num_states, self.num_actions), dtype=np.int16)
+            self.counts = np.zeros((self.num_states, self.num_actions), dtype=np.int32)
             self.non_dominated = [
-                [{tuple(np.zeros(self.num_objectives, dtype=np.float16))} for _ in range(self.num_actions)] for _ in
+                [{tuple(np.zeros(self.num_objectives, dtype=np.float32))} for _ in range(self.num_actions)] for _ in
                 range(self.num_states)
             ]
-            self.avg_reward = np.zeros((self.num_states, self.num_actions, self.num_objectives), dtype=np.float16)
+            self.avg_reward = np.zeros((self.num_states, self.num_actions, self.num_objectives), dtype=np.float32)
 
         if is_loaded_checkpoint:
             self.get_q_set = self.get_q_set_inference

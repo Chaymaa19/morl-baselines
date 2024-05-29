@@ -4,6 +4,7 @@ import os
 import json
 import shelve
 import time
+from datetime import datetime
 from typing import Callable, List, Optional, Dict
 
 import gymnasium as gym
@@ -39,6 +40,7 @@ class PQL(MOAgent):
             experiment_name: Optional[str] = "Pareto Q-Learning",
             logger: Optional[Logger] = None,
             log: bool = True,
+            is_loaded_checkpoint: bool = False
     ):
         """Initialize the Pareto Q-learning algorithm.
 
@@ -90,12 +92,19 @@ class PQL(MOAgent):
 
         self.num_states = np.prod(self.env_shape)
         self.num_objectives = self.env.reward_space.shape[0]
-        self.counts = np.zeros((self.num_states, self.num_actions), dtype=np.int16)
-        self.non_dominated = [
-            [{tuple(np.zeros(self.num_objectives, dtype=np.float16))} for _ in range(self.num_actions)] for _ in
-            range(self.num_states)
-        ]
-        self.avg_reward = np.zeros((self.num_states, self.num_actions, self.num_objectives), dtype=np.float16)
+
+        if not is_loaded_checkpoint:
+            self.counts = np.zeros((self.num_states, self.num_actions), dtype=np.int16)
+            self.non_dominated = [
+                [{tuple(np.zeros(self.num_objectives, dtype=np.float16))} for _ in range(self.num_actions)] for _ in
+                range(self.num_states)
+            ]
+            self.avg_reward = np.zeros((self.num_states, self.num_actions, self.num_objectives), dtype=np.float16)
+
+        if is_loaded_checkpoint:
+            self.get_q_set = self.get_q_set_inference
+        else:
+            self.get_q_set = self.get_q_set_default
 
         # Logging
         self.log = log
@@ -156,7 +165,7 @@ class PQL(MOAgent):
         action_scores = [hypervolume(self.ref_point, list(q_set)) for q_set in q_sets]
         return action_scores
 
-    def get_q_set(self, state: int, action: int):
+    def get_q_set_default(self, state: int, action: int):
         """Compute the Q-set for a given state-action pair.
 
         Args:
@@ -167,6 +176,20 @@ class PQL(MOAgent):
             A set of Q vectors.
         """
         nd_array = np.array(list(self.non_dominated[state][action]))
+        q_array = self.avg_reward[state, action] + self.gamma * nd_array
+        return {tuple(vec) for vec in q_array}
+
+    def get_q_set_inference(self, state: int, action: int):
+        """Compute the Q-set for a given state-action pair.
+
+        Args:
+            state (int): The current state.
+            action (int): The action.
+
+        Returns:
+            A set of Q vectors.
+        """
+        nd_array = np.array(list(self.non_dominated[str(state)][str(action)]))
         q_array = self.avg_reward[state, action] + self.gamma * nd_array
         return {tuple(vec) for vec in q_array}
 
@@ -435,7 +458,7 @@ class PQL(MOAgent):
 
             for action in range(self.num_actions):
                 im_rew = self.avg_reward[state, action]
-                non_dominated_set = self.non_dominated[state][action]
+                non_dominated_set = self.non_dominated[str(state)][str(action)]
 
                 for q in non_dominated_set:
                     q = np.array(q)
@@ -510,37 +533,6 @@ class PQL(MOAgent):
         np.save(file=path + "/avg_reward", arr=self.avg_reward.reshape(self.avg_reward.shape[0], -1))
 
     @classmethod
-    def load_old(cls, checkpoint_path: str, env, new_logger: Optional[Logger] = None):
-        if not os.path.isdir(checkpoint_path):
-            raise FileNotFoundError(f"Checkpoint for model in {checkpoint_path} not found!")
-
-        # Load params dict, counts, non_dominated and avg_reward tables
-        pql_params = load_json_file(path=checkpoint_path + "/pql_params.json")
-        counts = np.loadtxt(fname=checkpoint_path + "/counts.txt")
-        non_dominated = load_pickle(path=checkpoint_path + "/non_dominated.pkl")
-        avg_reward = np.loadtxt(fname=checkpoint_path + "/avg_reward.txt")
-        avg_reward = avg_reward.reshape(pql_params["num_states"], pql_params["num_actions"],
-                                        pql_params["num_objectives"])
-
-        # Create instance of the algorithm with loaded params
-        model = PQL(
-            env=env,
-            ref_point=np.array(pql_params["ref_point"]),
-            gamma=pql_params["gamma"],
-            initial_epsilon=pql_params["initial_epsilon"],
-            epsilon_decay_steps=pql_params["epsilon_decay_steps"],
-            final_epsilon=pql_params["final_epsilon"],
-            logger=new_logger,
-            log=new_logger is not None  # Log only if new_logger is provided
-        )
-        # TODO: make setters instead of this
-        model.counts = counts
-        model.non_dominated = non_dominated
-        model.avg_reward = avg_reward
-
-        return model
-
-    @classmethod
     def load(cls, checkpoint_path: str, env, new_logger: Optional[Logger] = None):
         if not os.path.isdir(checkpoint_path):
             raise FileNotFoundError(f"Checkpoint for model in {checkpoint_path} not found!")
@@ -548,7 +540,7 @@ class PQL(MOAgent):
         # Load params dict, counts, non_dominated and avg_reward tables
         pql_params = load_json_file(path=checkpoint_path + "/pql_params.json")
         counts = np.load(file=checkpoint_path + "/counts.npy", mmap_mode="r")
-        non_dominated = load_non_dominated_in_shelve(path=checkpoint_path + "/non_dominated.shelf")
+        non_dominated = shelve.open(checkpoint_path + "/non_dominated.shelf", 'r')
         avg_reward = np.load(file=checkpoint_path + "/avg_reward.npy", mmap_mode="r")
         avg_reward = avg_reward.reshape(pql_params["num_states"], pql_params["num_actions"],
                                         pql_params["num_objectives"])
@@ -564,12 +556,14 @@ class PQL(MOAgent):
             logger=new_logger,
             log=new_logger is not None  # Log only if new_logger is provided
         )
-        # TODO: make setters instead of this
         model.counts = counts
         model.non_dominated = non_dominated
         model.avg_reward = avg_reward
 
         return model
+
+    def close_all_files(self):
+        self.non_dominated.close()
 
 
 # TODO: move somewhere else
@@ -584,14 +578,18 @@ def dump_pickle(data, path):
         pickle.dump(data, f)
 
 
-def dump_non_dominated_in_shelve(path, data):
+def dump_non_dominated_in_shelve(path, non_dominated):
     with shelve.open(path, 'n') as shelf:
-        shelf['non_dominated'] = data
-
-
-def load_non_dominated_in_shelve(path):
-    with shelve.open(path, 'r') as shelf:
-        return shelf['non_dominated']
+        num_states = len(non_dominated)
+        num_actions = len(non_dominated[0])
+        for state in range(num_states):
+            print(f"{datetime.now()} - Processing state {state}")
+            if str(state) not in shelf:
+                shelf[str(state)] = {}
+            state_q_sets = shelf[str(state)]
+            for action in range(num_actions):
+                state_q_sets[str(action)] = non_dominated[state][action]
+            shelf[str(state)] = state_q_sets
 
 
 def load_json_file(path):

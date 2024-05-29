@@ -554,7 +554,8 @@ class PQL(MOAgent):
             epsilon_decay_steps=pql_params["epsilon_decay_steps"],
             final_epsilon=pql_params["final_epsilon"],
             logger=new_logger,
-            log=new_logger is not None  # Log only if new_logger is provided
+            log=new_logger is not None,  # Log only if new_logger is provided
+            is_loaded_checkpoint=True
         )
         model.counts = counts
         model.non_dominated = non_dominated

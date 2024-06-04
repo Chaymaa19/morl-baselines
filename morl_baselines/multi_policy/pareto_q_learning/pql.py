@@ -529,7 +529,7 @@ class PQL(MOAgent):
 
         # Save counts, non_dominated and avg_reward tables
         np.save(file=path + "/counts", arr=self.counts)
-        dump_non_dominated_in_shelve(path=path + "/non_dominated.shelf", data=self.non_dominated)
+        dump_non_dominated_in_shelve(path=path + "/non_dominated.shelf", non_dominated=self.non_dominated)
         np.save(file=path + "/avg_reward", arr=self.avg_reward.reshape(self.avg_reward.shape[0], -1))
 
     @classmethod

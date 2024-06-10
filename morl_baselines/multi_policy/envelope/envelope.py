@@ -1,6 +1,6 @@
 """Envelope Q-Learning implementation."""
 import os
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 from typing_extensions import override
 
 import gymnasium as gym
@@ -27,6 +27,7 @@ from morl_baselines.common.networks import (
 from morl_baselines.common.prioritized_buffer import PrioritizedReplayBuffer
 from morl_baselines.common.utils import linearly_decaying_value
 from morl_baselines.common.weights import equally_spaced_weights, random_weights
+from morl_baselines.common.logger import Logger
 
 
 class QNet(nn.Module):
@@ -85,35 +86,36 @@ class Envelope(MOPolicy, MOAgent):
     """
 
     def __init__(
-        self,
-        env,
-        learning_rate: float = 3e-4,
-        initial_epsilon: float = 0.01,
-        final_epsilon: float = 0.01,
-        epsilon_decay_steps: int = None,  # None == fixed epsilon
-        tau: float = 1.0,
-        target_net_update_freq: int = 200,  # ignored if tau != 1.0
-        buffer_size: int = int(1e6),
-        net_arch: List = [256, 256, 256, 256],
-        batch_size: int = 256,
-        learning_starts: int = 100,
-        gradient_updates: int = 1,
-        gamma: float = 0.99,
-        max_grad_norm: Optional[float] = 1.0,
-        envelope: bool = True,
-        num_sample_w: int = 4,
-        per: bool = True,
-        per_alpha: float = 0.6,
-        initial_homotopy_lambda: float = 0.0,
-        final_homotopy_lambda: float = 1.0,
-        homotopy_decay_steps: int = None,
-        project_name: str = "MORL-Baselines",
-        experiment_name: str = "Envelope",
-        wandb_entity: Optional[str] = None,
-        log: bool = True,
-        seed: Optional[int] = None,
-        device: Union[th.device, str] = "auto",
-        group: Optional[str] = None,
+            self,
+            env,
+            learning_rate: float = 3e-4,
+            initial_epsilon: float = 0.01,
+            final_epsilon: float = 0.01,
+            epsilon_decay_steps: int = None,  # None == fixed epsilon
+            tau: float = 1.0,
+            target_net_update_freq: int = 200,  # ignored if tau != 1.0
+            buffer_size: int = int(1e6),
+            net_arch: List = [256, 256, 256, 256],
+            batch_size: int = 256,
+            learning_starts: int = 100,
+            gradient_updates: int = 1,
+            gamma: float = 0.99,
+            max_grad_norm: Optional[float] = 1.0,
+            envelope: bool = True,
+            num_sample_w: int = 4,
+            per: bool = True,
+            per_alpha: float = 0.6,
+            initial_homotopy_lambda: float = 0.0,
+            final_homotopy_lambda: float = 1.0,
+            homotopy_decay_steps: int = None,
+            project_name: str = "MORL-Baselines",
+            experiment_name: str = "Envelope",
+            wandb_entity: Optional[str] = None,
+            log: bool = True,
+            seed: Optional[int] = None,
+            device: Union[th.device, str] = "auto",
+            group: Optional[str] = None,
+            logger: Optional[Logger] = None
     ):
         """Envelope Q-learning algorithm.
 
@@ -170,7 +172,8 @@ class Envelope(MOPolicy, MOAgent):
         self.homotopy_decay_steps = homotopy_decay_steps
 
         self.q_net = QNet(self.observation_shape, self.action_dim, self.reward_dim, net_arch=net_arch).to(self.device)
-        self.target_q_net = QNet(self.observation_shape, self.action_dim, self.reward_dim, net_arch=net_arch).to(self.device)
+        self.target_q_net = QNet(self.observation_shape, self.action_dim, self.reward_dim, net_arch=net_arch).to(
+            self.device)
         self.target_q_net.load_state_dict(self.q_net.state_dict())
         for param in self.target_q_net.parameters():
             param.requires_grad = False
@@ -198,7 +201,8 @@ class Envelope(MOPolicy, MOAgent):
             )
 
         self.log = log
-        if log:
+        self.logger = logger
+        if log and not self.logger:
             self.setup_wandb(project_name, experiment_name, wandb_entity, group)
 
     @override
@@ -444,7 +448,8 @@ class Envelope(MOPolicy, MOAgent):
             ac.unsqueeze(2).unsqueeze(3).expand(next_q_values.size(0), next_q_values.size(1), 1, next_q_values.size(3)),
         ).squeeze(2)
         # Index the Q-values for the max sampled weights
-        max_next_q = max_next_q.gather(1, pref.reshape(-1, 1, 1).expand(max_next_q.size(0), 1, max_next_q.size(2))).squeeze(1)
+        max_next_q = max_next_q.gather(1, pref.reshape(-1, 1, 1).expand(max_next_q.size(0), 1,
+                                                                        max_next_q.size(2))).squeeze(1)
         return max_next_q
 
     @th.no_grad()
@@ -470,21 +475,25 @@ class Envelope(MOPolicy, MOAgent):
         q_values_target = q_values_target.reshape(-1, self.reward_dim)
         return q_values_target
 
+    def register_additional_config(self, conf: Dict = {}) -> None:
+        for key, value in conf.items():
+            self.logger.write_param(key=key, value=value)
+
     def train(
-        self,
-        total_timesteps: int,
-        eval_env: Optional[gym.Env] = None,
-        ref_point: Optional[np.ndarray] = None,
-        known_pareto_front: Optional[List[np.ndarray]] = None,
-        weight: Optional[np.ndarray] = None,
-        total_episodes: Optional[int] = None,
-        reset_num_timesteps: bool = True,
-        eval_freq: int = 10000,
-        num_eval_weights_for_front: int = 100,
-        num_eval_episodes_for_front: int = 5,
-        num_eval_weights_for_eval: int = 50,
-        reset_learning_starts: bool = False,
-        verbose: bool = False,
+            self,
+            total_timesteps: int,
+            eval_env: Optional[gym.Env] = None,
+            ref_point: Optional[np.ndarray] = None,
+            known_pareto_front: Optional[List[np.ndarray]] = None,
+            weight: Optional[np.ndarray] = None,
+            total_episodes: Optional[int] = None,
+            reset_num_timesteps: bool = True,
+            eval_freq: int = 10000,
+            num_eval_weights_for_front: int = 100,
+            num_eval_episodes_for_front: int = 5,
+            num_eval_weights_for_eval: int = 50,
+            reset_learning_starts: bool = False,
+            verbose: bool = False,
     ):
         """Train the agent.
 
@@ -506,21 +515,38 @@ class Envelope(MOPolicy, MOAgent):
         if eval_env is not None:
             assert ref_point is not None, "Reference point must be provided for the hypervolume computation."
         if self.log:
-            self.register_additional_config(
-                {
-                    "total_timesteps": total_timesteps,
-                    "ref_point": ref_point.tolist() if ref_point is not None else None,
-                    "known_front": known_pareto_front,
-                    "weight": weight.tolist() if weight is not None else None,
-                    "total_episodes": total_episodes,
-                    "reset_num_timesteps": reset_num_timesteps,
-                    "eval_freq": eval_freq,
-                    "num_eval_weights_for_front": num_eval_weights_for_front,
-                    "num_eval_episodes_for_front": num_eval_episodes_for_front,
-                    "num_eval_weights_for_eval": num_eval_weights_for_eval,
-                    "reset_learning_starts": reset_learning_starts,
-                }
-            )
+            if not self.logger:
+                super().register_additional_config(
+                    {
+                        "total_timesteps": total_timesteps,
+                        "ref_point": ref_point.tolist() if ref_point is not None else None,
+                        "known_front": known_pareto_front,
+                        "weight": weight.tolist() if weight is not None else None,
+                        "total_episodes": total_episodes,
+                        "reset_num_timesteps": reset_num_timesteps,
+                        "eval_freq": eval_freq,
+                        "num_eval_weights_for_front": num_eval_weights_for_front,
+                        "num_eval_episodes_for_front": num_eval_episodes_for_front,
+                        "num_eval_weights_for_eval": num_eval_weights_for_eval,
+                        "reset_learning_starts": reset_learning_starts,
+                    }
+                )
+            else:
+                self.register_additional_config(
+                    {
+                        "total_timesteps": total_timesteps,
+                        "ref_point": ref_point.tolist() if ref_point is not None else None,
+                        "known_front": known_pareto_front,
+                        "weight": weight.tolist() if weight is not None else None,
+                        "total_episodes": total_episodes,
+                        "reset_num_timesteps": reset_num_timesteps,
+                        "eval_freq": eval_freq,
+                        "num_eval_weights_for_front": num_eval_weights_for_front,
+                        "num_eval_episodes_for_front": num_eval_episodes_for_front,
+                        "num_eval_weights_for_eval": num_eval_weights_for_eval,
+                        "reset_learning_starts": reset_learning_starts,
+                    }
+                )
 
         self.global_step = 0 if reset_num_timesteps else self.global_step
         self.num_episodes = 0 if reset_num_timesteps else self.num_episodes
@@ -555,14 +581,18 @@ class Envelope(MOPolicy, MOAgent):
                     self.policy_eval(eval_env, weights=ew, num_episodes=num_eval_episodes_for_front, log=self.log)[3]
                     for ew in eval_weights
                 ]
-                log_all_multi_policy_metrics(
-                    current_front=current_front,
-                    hv_ref_point=ref_point,
-                    reward_dim=self.reward_dim,
-                    global_step=self.global_step,
-                    n_sample_weights=num_eval_weights_for_eval,
-                    ref_front=known_pareto_front,
-                )
+                if self.logger:
+                    front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
+                    self.logger.write_table(key="eval/front", table=front)
+                    self.logger.write_param(key="eval/num_pf_solutions", value=len(current_front))
+                # log_all_multi_policy_metrics(
+                #     current_front=current_front,
+                #     hv_ref_point=ref_point,
+                #     reward_dim=self.reward_dim,
+                #     global_step=self.global_step,
+                #     n_sample_weights=num_eval_weights_for_eval,
+                #     ref_front=known_pareto_front,
+                # )
 
             if terminated or truncated:
                 obs, _ = self.env.reset()

@@ -1,5 +1,6 @@
 """Envelope Q-Learning implementation."""
 import os
+import time
 from typing import List, Optional, Union, Dict
 from typing_extensions import override
 
@@ -327,12 +328,17 @@ class Envelope(MOPolicy, MOAgent):
             self.q_optim.zero_grad()
             critic_loss.backward()
             if self.log and self.global_step % 100 == 0:
-                wandb.log(
-                    {
-                        "losses/grad_norm": get_grad_norm(self.q_net.parameters()).item(),
-                        "global_step": self.global_step,
-                    },
-                )
+                if not self.logger:
+                    wandb.log(
+                        {
+                            "losses/grad_norm": get_grad_norm(self.q_net.parameters()).item(),
+                            "global_step": self.global_step,
+                        },
+                    )
+                else:
+                    self.logger.write_param(key="losses/grad_norm", value=get_grad_norm(self.q_net.parameters()).item())
+                    self.logger.write_param(key="global_step", value=self.global_step)
+
             if self.max_grad_norm is not None:
                 th.nn.utils.clip_grad_norm_(self.q_net.parameters(), self.max_grad_norm)
             self.q_optim.step()
@@ -367,16 +373,25 @@ class Envelope(MOPolicy, MOAgent):
             )
 
         if self.log and self.global_step % 100 == 0:
-            wandb.log(
-                {
-                    "losses/critic_loss": np.mean(critic_losses),
-                    "metrics/epsilon": self.epsilon,
-                    "metrics/homotopy_lambda": self.homotopy_lambda,
-                    "global_step": self.global_step,
-                },
-            )
-            if self.per:
-                wandb.log({"metrics/mean_priority": np.mean(priority)})
+            if not self.logger:
+                wandb.log(
+                    {
+                        "losses/critic_loss": np.mean(critic_losses),
+                        "metrics/epsilon": self.epsilon,
+                        "metrics/homotopy_lambda": self.homotopy_lambda,
+                        "global_step": self.global_step,
+                    },
+                )
+                if self.per:
+                    wandb.log({"metrics/mean_priority": np.mean(priority)})
+            else:
+                self.logger.write_param(key="losses/critic_loss", value= np.mean(critic_losses))
+                self.logger.write_param(key="metrics/epsilon", value=self.epsilon)
+                self.logger.write_param(key="metrics/homotopy_lambda", value=self.homotopy_lambda)
+                self.logger.write_param(key="global_step", value=self.global_step)
+
+                if self.per:
+                    self.logger.write_param(key="metrics/mean_priority", value=np.mean(priority))
 
     @override
     def eval(self, obs: np.ndarray, w: np.ndarray) -> int:
@@ -560,6 +575,7 @@ class Envelope(MOPolicy, MOAgent):
         w = weight if weight is not None else random_weights(self.reward_dim, 1, dist="gaussian", rng=self.np_random)
         tensor_w = th.tensor(w).float().to(self.device)
 
+        iteration_begin_time = time.time()
         for _ in range(1, total_timesteps + 1):
             if total_episodes is not None and num_episodes == total_episodes:
                 break
@@ -583,8 +599,11 @@ class Envelope(MOPolicy, MOAgent):
                 ]
                 if self.logger:
                     front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
+                    self.logger.write_param(key="metrics/iteration_time", value=time.time() - iteration_begin_time)
                     self.logger.write_table(key="eval/front", table=front)
                     self.logger.write_param(key="eval/num_pf_solutions", value=len(current_front))
+
+                iteration_begin_time = time.time()
                 # log_all_multi_policy_metrics(
                 #     current_front=current_front,
                 #     hv_ref_point=ref_point,

@@ -598,9 +598,9 @@ class Envelope(MOPolicy, MOAgent):
                 obs, _ = self.env.reset()
                 num_episodes += 1
                 self.num_episodes += 1
-
-                if self.log and "episode" in info.keys():
-                    log_episode_info(info["episode"], np.dot, w, self.global_step, verbose=verbose)
+                #
+                # if self.log and "episode" in info.keys():
+                #     log_episode_info(info["episode"], np.dot, w, self.global_step, verbose=verbose)
 
                 if weight is None:
                     w = random_weights(self.reward_dim, 1, dist="gaussian", rng=self.np_random)

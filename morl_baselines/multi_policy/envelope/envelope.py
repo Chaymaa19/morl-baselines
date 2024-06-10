@@ -600,7 +600,7 @@ class Envelope(MOPolicy, MOAgent):
                 if self.logger:
                     front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
                     self.logger.record(key="metrics/iteration_time", value=time.time() - iteration_begin_time)
-                    self.logger.record(key="eval/front", table=front)
+                    self.logger.write_table(key="eval/front", table=front)
                     self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
                     self.logger.dump(step=self.global_step)
 

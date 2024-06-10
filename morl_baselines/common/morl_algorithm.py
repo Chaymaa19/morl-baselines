@@ -54,11 +54,12 @@ class MOPolicy(ABC):
         """
 
     def __report(
-        self,
-        scalarized_return,
-        scalarized_discounted_return,
-        vec_return,
-        discounted_vec_return,
+            self,
+            scalarized_return,
+            scalarized_discounted_return,
+            vec_return,
+            discounted_vec_return,
+            custom_logger=None
     ):
         """Writes the data to wandb summary."""
         if self.id is None:
@@ -66,25 +67,36 @@ class MOPolicy(ABC):
         else:
             idstr = f"_{self.id}"
 
-        wandb.log(
-            {
-                f"eval{idstr}/scalarized_return": scalarized_return,
-                f"eval{idstr}/scalarized_discounted_return": scalarized_discounted_return,
-                "global_step": self.global_step,
-            }
-        )
-        for i in range(vec_return.shape[0]):
+        if custom_logger:
+            custom_logger.record(key=f"eval{idstr}/scalarized_return", value=scalarized_return)
+            custom_logger.record(key=f"eval{idstr}/scalarized_discounted_return", value=scalarized_discounted_return)
+        else:
             wandb.log(
-                {f"eval{idstr}/vec_{i}": vec_return[i], f"eval{idstr}/discounted_vec_{i}": discounted_vec_return[i]},
+                {
+                    f"eval{idstr}/scalarized_return": scalarized_return,
+                    f"eval{idstr}/scalarized_discounted_return": scalarized_discounted_return,
+                    "global_step": self.global_step,
+                }
             )
+        for i in range(vec_return.shape[0]):
+            if custom_logger:
+                custom_logger.record(key=f"eval{idstr}/vec_{i}", value=vec_return[i])
+                custom_logger.record(key=f"eval{idstr}/discounted_vec_{i}",
+                                     value=discounted_vec_return[i])
+            else:
+                wandb.log(
+                    {f"eval{idstr}/vec_{i}": vec_return[i],
+                     f"eval{idstr}/discounted_vec_{i}": discounted_vec_return[i]},
+                )
 
     def policy_eval(
-        self,
-        eval_env,
-        num_episodes: int = 5,
-        scalarization=np.dot,
-        weights: Optional[np.ndarray] = None,
-        log: bool = False,
+            self,
+            eval_env,
+            num_episodes: int = 5,
+            scalarization=np.dot,
+            weights: Optional[np.ndarray] = None,
+            log: bool = False,
+            custom_logger=None
     ):
         """Runs a policy evaluation (typically over a few episodes) on eval_env and logs some metrics if asked.
 
@@ -111,16 +123,17 @@ class MOPolicy(ABC):
                 scalarized_discounted_return,
                 vec_return,
                 discounted_vec_return,
+                custom_logger=custom_logger
             )
 
         return scalarized_return, scalarized_discounted_return, vec_return, discounted_vec_return
 
     def policy_eval_esr(
-        self,
-        eval_env,
-        scalarization,
-        weights: Optional[np.ndarray] = None,
-        log: bool = False,
+            self,
+            eval_env,
+            scalarization,
+            weights: Optional[np.ndarray] = None,
+            log: bool = False,
     ):
         """Runs a policy evaluation (typically on one episode) on eval_env and logs some metrics if asked.
 
@@ -182,7 +195,8 @@ class MOPolicy(ABC):
 class MOAgent(ABC):
     """An MORL Agent, can contain one or multiple MOPolicies. Contains helpers to extract features from the environment, setup logging etc."""
 
-    def __init__(self, env: Optional[gym.Env], device: Union[th.device, str] = "auto", seed: Optional[int] = None) -> None:
+    def __init__(self, env: Optional[gym.Env], device: Union[th.device, str] = "auto",
+                 seed: Optional[int] = None) -> None:
         """Initializes the agent.
 
         Args:
@@ -242,7 +256,7 @@ class MOAgent(ABC):
             wandb.config[key] = value
 
     def setup_wandb(
-        self, project_name: str, experiment_name: str, entity: Optional[str] = None, group: Optional[str] = None
+            self, project_name: str, experiment_name: str, entity: Optional[str] = None, group: Optional[str] = None
     ) -> None:
         """Initializes the wandb writer.
 

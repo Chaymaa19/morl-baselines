@@ -336,8 +336,7 @@ class Envelope(MOPolicy, MOAgent):
                         },
                     )
                 else:
-                    self.logger.write_param(key="losses/grad_norm", value=get_grad_norm(self.q_net.parameters()).item())
-                    self.logger.write_param(key="global_step", value=self.global_step)
+                    self.logger.record(key="losses/grad_norm", value=get_grad_norm(self.q_net.parameters()).item())
 
             if self.max_grad_norm is not None:
                 th.nn.utils.clip_grad_norm_(self.q_net.parameters(), self.max_grad_norm)
@@ -385,13 +384,13 @@ class Envelope(MOPolicy, MOAgent):
                 if self.per:
                     wandb.log({"metrics/mean_priority": np.mean(priority)})
             else:
-                self.logger.write_param(key="losses/critic_loss", value= np.mean(critic_losses))
-                self.logger.write_param(key="metrics/epsilon", value=self.epsilon)
-                self.logger.write_param(key="metrics/homotopy_lambda", value=self.homotopy_lambda)
-                self.logger.write_param(key="global_step", value=self.global_step)
+                self.logger.record(key="losses/critic_loss", value=np.mean(critic_losses))
+                self.logger.record(key="metrics/epsilon", value=self.epsilon)
+                self.logger.record(key="metrics/homotopy_lambda", value=self.homotopy_lambda)
+                self.logger.record(key="global_step", value=self.global_step)
 
                 if self.per:
-                    self.logger.write_param(key="metrics/mean_priority", value=np.mean(priority))
+                    self.logger.record(key="metrics/mean_priority", value=np.mean(priority))
 
     @override
     def eval(self, obs: np.ndarray, w: np.ndarray) -> int:
@@ -594,14 +593,16 @@ class Envelope(MOPolicy, MOAgent):
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
                 current_front = [
-                    self.policy_eval(eval_env, weights=ew, num_episodes=num_eval_episodes_for_front, log=self.log)[3]
+                    self.policy_eval(eval_env, weights=ew, num_episodes=num_eval_episodes_for_front, log=self.log,
+                                     custom_logger=self.logger)[3]
                     for ew in eval_weights
                 ]
                 if self.logger:
                     front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
-                    self.logger.write_param(key="metrics/iteration_time", value=time.time() - iteration_begin_time)
-                    self.logger.write_table(key="eval/front", table=front)
-                    self.logger.write_param(key="eval/num_pf_solutions", value=len(current_front))
+                    self.logger.record(key="metrics/iteration_time", value=time.time() - iteration_begin_time)
+                    self.logger.record(key="eval/front", table=front)
+                    self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
+                    self.logger.dump(step=self.global_step)
 
                 iteration_begin_time = time.time()
                 # log_all_multi_policy_metrics(

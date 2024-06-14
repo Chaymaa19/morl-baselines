@@ -27,7 +27,7 @@ def eval_mo(
         w: Optional[np.ndarray] = None,
         scalarization=np.dot,
         render: bool = False,
-) -> Tuple[float, float, np.ndarray, np.ndarray]:
+) -> Tuple[float, float, np.ndarray, np.ndarray, int]:
     """Evaluates one episode of the agent in the environment.
 
     Args:
@@ -41,6 +41,7 @@ def eval_mo(
         (float, float, np.ndarray, np.ndarray): Scalarized return, scalarized discounted return, vectorized return, vectorized discounted return
     """
     obs, _ = env.reset()
+    init_obs_id = np.sum([digit * 2 ** i for i, digit in enumerate(obs[::-1])])
     done = False
     vec_return, disc_vec_return = np.zeros_like(w), np.zeros_like(w)
     gamma = 1.0
@@ -65,6 +66,7 @@ def eval_mo(
         scalarized_discounted_return,
         vec_return,
         disc_vec_return,
+        init_obs_id,
     )
 
 
@@ -118,7 +120,7 @@ def eval_mo_reward_conditioned(
 
 def policy_evaluation_mo(
         agent, env, w: np.ndarray, scalarization=np.dot, rep: int = 5
-) -> Tuple[float, float, np.ndarray, np.ndarray]:
+) -> Tuple[float, float, np.ndarray, np.ndarray, int]:
     """Evaluates the value of a policy by running the policy for multiple episodes. Returns the average returns.
 
     Args:
@@ -142,6 +144,7 @@ def policy_evaluation_mo(
         avg_scalarized_discounted_return,
         avg_vec_return,
         avg_disc_vec_return,
+        evals[4] # Here the number of the initial state of the evaluation
     )
 
 

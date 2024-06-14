@@ -59,7 +59,9 @@ class MOPolicy(ABC):
             scalarized_discounted_return,
             vec_return,
             discounted_vec_return,
-            custom_logger=None
+            custom_logger=None,
+            eval_id: int = None,
+            init_obs_id: int = None,
     ):
         """Writes the data to wandb summary."""
         if self.id is None:
@@ -68,8 +70,10 @@ class MOPolicy(ABC):
             idstr = f"_{self.id}"
 
         if custom_logger:
-            custom_logger.record(key=f"eval{idstr}/scalarized_return", value=scalarized_return)
-            custom_logger.record(key=f"eval{idstr}/scalarized_discounted_return", value=scalarized_discounted_return)
+            custom_logger.record(key=f"eval{idstr}_{eval_id}/scalarized_return", value=scalarized_return)
+            custom_logger.record(key=f"eval{idstr}_{eval_id}/scalarized_discounted_return",
+                                 value=scalarized_discounted_return)
+            custom_logger.record(key=f"eval{idstr}_{eval_id}/init_obs", value=init_obs_id)
         else:
             wandb.log(
                 {
@@ -80,8 +84,8 @@ class MOPolicy(ABC):
             )
         for i in range(vec_return.shape[0]):
             if custom_logger:
-                custom_logger.record(key=f"eval{idstr}/vec_{i}", value=vec_return[i])
-                custom_logger.record(key=f"eval{idstr}/discounted_vec_{i}",
+                custom_logger.record(key=f"eval{idstr}_{eval_id}/vec_{i}", value=vec_return[i])
+                custom_logger.record(key=f"eval{idstr}_{eval_id}/discounted_vec_{i}",
                                      value=discounted_vec_return[i])
             else:
                 wandb.log(
@@ -96,7 +100,8 @@ class MOPolicy(ABC):
             scalarization=np.dot,
             weights: Optional[np.ndarray] = None,
             log: bool = False,
-            custom_logger=None
+            custom_logger=None,
+            eval_id: int = None
     ):
         """Runs a policy evaluation (typically over a few episodes) on eval_env and logs some metrics if asked.
 
@@ -115,6 +120,7 @@ class MOPolicy(ABC):
             scalarized_discounted_return,
             vec_return,
             discounted_vec_return,
+            init_obs_id
         ) = policy_evaluation_mo(self, eval_env, scalarization=scalarization, w=weights, rep=num_episodes)
 
         if log:
@@ -123,7 +129,9 @@ class MOPolicy(ABC):
                 scalarized_discounted_return,
                 vec_return,
                 discounted_vec_return,
-                custom_logger=custom_logger
+                custom_logger=custom_logger,
+                init_obs_id=init_obs_id,
+                eval_id=eval_id
             )
 
         return scalarized_return, scalarized_discounted_return, vec_return, discounted_vec_return

@@ -594,13 +594,16 @@ class Envelope(MOPolicy, MOAgent):
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
                 current_front = [
                     self.policy_eval(eval_env, weights=ew, num_episodes=num_eval_episodes_for_front, log=self.log,
-                                     custom_logger=self.logger)[3]
-                    for ew in eval_weights
+                                     custom_logger=self.logger, eval_id=idx)[3]
+                    for idx, ew in enumerate(eval_weights)
                 ]
                 if self.logger:
                     front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
+                    log_weights = {f"objective_{i}": [p[i - 1] for p in eval_weights] for i in
+                                   range(1, self.reward_dim + 1)}
                     self.logger.record(key="metrics/iteration_time", value=time.time() - iteration_begin_time)
                     self.logger.write_table(key="eval/front", table=front)
+                    self.logger.write_table(key="eval/weights", table=log_weights)
                     self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
                     self.logger.dump(step=self.global_step)
 

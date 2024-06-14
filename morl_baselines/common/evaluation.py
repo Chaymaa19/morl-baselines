@@ -144,7 +144,7 @@ def policy_evaluation_mo(
         avg_scalarized_discounted_return,
         avg_vec_return,
         avg_disc_vec_return,
-        evals[4] # Here the number of the initial state of the evaluation
+        evals[0][4]  # Here the number of the initial state of the evaluation
     )
 
 

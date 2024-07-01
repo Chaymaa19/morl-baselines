@@ -71,8 +71,8 @@ class MOPolicy(ABC):
 
         if custom_logger:
             custom_logger.record(key=f"eval{idstr}_{eval_id}/scalarized_return", value=scalarized_return)
-            custom_logger.record(key=f"eval{idstr}_{eval_id}/scalarized_discounted_return",
-                                 value=scalarized_discounted_return)
+            # custom_logger.record(key=f"eval{idstr}_{eval_id}/scalarized_discounted_return",
+            #                      value=scalarized_discounted_return) # No need since gamma is 1
             custom_logger.record(key=f"eval{idstr}_{eval_id}/init_obs", value=init_obs_id)
         else:
             wandb.log(
@@ -84,9 +84,10 @@ class MOPolicy(ABC):
             )
         for i in range(vec_return.shape[0]):
             if custom_logger:
-                custom_logger.record(key=f"eval{idstr}_{eval_id}/vec_{i}", value=vec_return[i])
-                custom_logger.record(key=f"eval{idstr}_{eval_id}/discounted_vec_{i}",
-                                     value=discounted_vec_return[i])
+                # custom_logger.record(key=f"eval{idstr}_{eval_id}/vec_{i}", value=vec_return[i])
+                # custom_logger.record(key=f"eval{idstr}_{eval_id}/discounted_vec_{i}",
+                #                      value=discounted_vec_return[i])
+                pass  # Don't log vector rewards
             else:
                 wandb.log(
                     {f"eval{idstr}/vec_{i}": vec_return[i],

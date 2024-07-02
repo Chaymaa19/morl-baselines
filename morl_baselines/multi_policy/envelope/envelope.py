@@ -15,6 +15,7 @@ import wandb
 from morl_baselines.common.buffer import ReplayBuffer
 from morl_baselines.common.evaluation import (
     log_all_multi_policy_metrics,
+    log_all_progress_metrics,
     log_episode_info,
 )
 from morl_baselines.common.morl_algorithm import MOAgent, MOPolicy
@@ -508,6 +509,7 @@ class Envelope(MOPolicy, MOAgent):
             num_eval_weights_for_eval: int = 50,
             reset_learning_starts: bool = False,
             verbose: bool = False,
+            log_progress_every: int = 100
     ):
         """Train the agent.
 
@@ -574,40 +576,82 @@ class Envelope(MOPolicy, MOAgent):
         w = weight if weight is not None else random_weights(self.reward_dim, 1, dist="gaussian", rng=self.np_random)
         tensor_w = th.tensor(w).float().to(self.device)
 
+        # Timers
         iteration_begin_time = time.time()
+        train_begin_time = time.time()
+        step_time = 0
+        update_time = 0
+        time_logging_metrics = -1
+        time_selecting_action = 0
+        eval_time = 0
+
         for _ in range(1, total_timesteps + 1):
             if total_episodes is not None and num_episodes == total_episodes:
                 break
 
+            begin_time = time.time()
             if self.global_step < self.learning_starts:
                 action = self.env.action_space.sample()
             else:
                 action = self.act(th.as_tensor(obs).float().to(self.device), tensor_w)
+            time_selecting_action += (time.time() - begin_time)
 
+            begin_step = time.time()
             next_obs, vec_reward, terminated, truncated, info = self.env.step(action)
+            step_time += (time.time() - begin_step)
             self.global_step += 1
 
             self.replay_buffer.add(obs, action, vec_reward, next_obs, terminated)
             if self.global_step >= self.learning_starts:
+                begin_time = time.time()
                 self.update()
+                update_time += (time.time() - begin_time)
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
+                begin_time = time.time()
                 current_front = [
                     self.policy_eval(eval_env, weights=ew, num_episodes=num_eval_episodes_for_front, log=self.log,
                                      custom_logger=self.logger, eval_id=idx)[3]
                     for idx, ew in enumerate(eval_weights)
                 ]
+                eval_time += (time.time() - begin_time)
                 if self.logger:
                     front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
                     log_weights = {f"objective_{i}": [p[i - 1] for p in eval_weights] for i in
                                    range(1, self.reward_dim + 1)}
-                    self.logger.record(key="metrics/iteration_time", value=time.time() - iteration_begin_time)
+                    # self.logger.record(key="metrics/iteration_time", value=time.time() - iteration_begin_time)
                     self.logger.write_table(key="eval/front", table=front)
                     self.logger.write_table(key="eval/weights", table=log_weights)
                     self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
                     self.logger.dump(step=self.global_step)
 
-                iteration_begin_time = time.time()
+                if self.log and self.global_step % log_progress_every == 0:
+                    begin_time = time.time()
+                    log_all_progress_metrics(
+                        global_step=self.global_step,
+                        # num_pf_solutions=len(self.get_local_pcs(0)),
+                        num_episodes=num_episodes,
+                        train_total_episodes=self.num_episodes,
+                        iteration_time=time.time() - iteration_begin_time,
+                        elapsed_time=time.time() - train_begin_time,
+                        step_time=step_time,
+                        update_time=update_time,
+                        eval_time=eval_time,
+                        time_logging_metrics=time_logging_metrics,
+                        time_selecting_action=time_selecting_action,
+                        # epsilon_decay_time=epsilon_decay_time,
+                        custom_logger=self.logger
+                    )
+                    time_logging_metrics = time.time() - begin_time
+                    self.logger.dump(step=self.global_step)
+                    num_episodes = 0
+                    step_time = 0
+                    iteration_begin_time = time.time()
+                    update_time = 0
+                    time_selecting_action = 0
+                    # epsilon_decay_time = 0
+
+                # iteration_begin_time = time.time()
                 # log_all_multi_policy_metrics(
                 #     current_front=current_front,
                 #     hv_ref_point=ref_point,

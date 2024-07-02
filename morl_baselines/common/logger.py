@@ -78,7 +78,8 @@ class Logger:
         :param key: metric to add
         :param value: value of the metric
         """
-        self.records[key] = value
+        if value is not None:
+            self.records[key] = value
 
     def dump(self, step: int) -> None:
         """

@@ -625,31 +625,31 @@ class Envelope(MOPolicy, MOAgent):
                     self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
                     self.logger.dump(step=self.global_step)
 
-                if self.log and self.global_step % log_progress_every == 0:
-                    begin_time = time.time()
-                    log_all_progress_metrics(
-                        global_step=self.global_step,
-                        # num_pf_solutions=len(self.get_local_pcs(0)),
-                        num_episodes=num_episodes,
-                        train_total_episodes=self.num_episodes,
-                        iteration_time=time.time() - iteration_begin_time,
-                        elapsed_time=time.time() - train_begin_time,
-                        step_time=step_time,
-                        update_time=update_time,
-                        eval_time=eval_time,
-                        time_logging_metrics=time_logging_metrics,
-                        time_selecting_action=time_selecting_action,
-                        # epsilon_decay_time=epsilon_decay_time,
-                        custom_logger=self.logger
-                    )
-                    time_logging_metrics = time.time() - begin_time
-                    self.logger.dump(step=self.global_step)
-                    num_episodes = 0
-                    step_time = 0
-                    iteration_begin_time = time.time()
-                    update_time = 0
-                    time_selecting_action = 0
-                    # epsilon_decay_time = 0
+            if self.log and self.global_step % log_progress_every == 0:
+                begin_time = time.time()
+                log_all_progress_metrics(
+                    global_step=self.global_step,
+                    # num_pf_solutions=len(self.get_local_pcs(0)),
+                    num_episodes=num_episodes,
+                    train_total_episodes=self.num_episodes,
+                    iteration_time=time.time() - iteration_begin_time,
+                    elapsed_time=time.time() - train_begin_time,
+                    step_time=step_time,
+                    update_time=update_time,
+                    eval_time=eval_time,
+                    time_logging_metrics=time_logging_metrics,
+                    time_selecting_action=time_selecting_action,
+                    # epsilon_decay_time=epsilon_decay_time,
+                    custom_logger=self.logger
+                )
+                time_logging_metrics = time.time() - begin_time
+                self.logger.dump(step=self.global_step)
+                num_episodes = 0
+                step_time = 0
+                iteration_begin_time = time.time()
+                update_time = 0
+                time_selecting_action = 0
+                # epsilon_decay_time = 0
 
                 # iteration_begin_time = time.time()
                 # log_all_multi_policy_metrics(

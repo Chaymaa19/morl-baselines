@@ -561,6 +561,7 @@ class Envelope(MOPolicy, MOAgent):
                         "num_eval_episodes_for_front": num_eval_episodes_for_front,
                         "num_eval_weights_for_eval": num_eval_weights_for_eval,
                         "reset_learning_starts": reset_learning_starts,
+                        "log_progress_every": log_progress_every
                     }
                 )
 

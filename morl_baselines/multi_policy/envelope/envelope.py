@@ -640,7 +640,8 @@ class Envelope(MOPolicy, MOAgent):
                     time_logging_metrics=time_logging_metrics,
                     time_selecting_action=time_selecting_action,
                     # epsilon_decay_time=epsilon_decay_time,
-                    custom_logger=self.logger
+                    custom_logger=self.logger,
+                    log_progress_every=log_progress_every
                 )
                 time_logging_metrics = time.time() - begin_time
                 self.logger.dump(step=self.global_step)

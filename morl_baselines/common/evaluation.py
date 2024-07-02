@@ -244,7 +244,7 @@ def log_all_progress_metrics(
     custom_logger.record(key="eval/num_pf_solutions", value=num_pf_solutions)
     custom_logger.record(key="metrics/iteration_episodes", value=num_episodes)
     custom_logger.record(key="metrics/total_episodes", value=train_total_episodes)
-    custom_logger.record(key=f"metrics/iteration_time_({log_progress_every} steps)", value=iteration_time)
+    custom_logger.record(key=f"metrics/iteration_time_{log_progress_every}_steps_", value=iteration_time)
     custom_logger.record(key="metrics/iteration_time_doing_steps", value=step_time)
     custom_logger.record(key="metrics/iteration_time_updating", value=update_time)
     custom_logger.record(key="metrics/iteration_time_eval", value=eval_time)

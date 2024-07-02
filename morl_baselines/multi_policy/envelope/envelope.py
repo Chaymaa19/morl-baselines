@@ -614,7 +614,7 @@ class Envelope(MOPolicy, MOAgent):
                                      custom_logger=self.logger, eval_id=idx)[3]
                     for idx, ew in enumerate(eval_weights)
                 ]
-                eval_time += (time.time() - begin_time)
+                eval_time = time.time() - begin_time
                 if self.logger:
                     front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
                     log_weights = {f"objective_{i}": [p[i - 1] for p in eval_weights] for i in
@@ -644,10 +644,11 @@ class Envelope(MOPolicy, MOAgent):
                 )
                 time_logging_metrics = time.time() - begin_time
                 self.logger.dump(step=self.global_step)
+                iteration_begin_time = time.time()
                 num_episodes = 0
                 step_time = 0
-                iteration_begin_time = time.time()
                 update_time = 0
+                eval_time = 0
                 time_selecting_action = 0
                 # epsilon_decay_time = 0
 

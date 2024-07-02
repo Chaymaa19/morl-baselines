@@ -73,7 +73,7 @@ class MOPolicy(ABC):
             custom_logger.record(key=f"eval{idstr}_{eval_id}/scalarized_return", value=scalarized_return)
             # custom_logger.record(key=f"eval{idstr}_{eval_id}/scalarized_discounted_return",
             #                      value=scalarized_discounted_return) # No need since gamma is 1
-            custom_logger.record(key=f"eval{idstr}_{eval_id}/init_obs", value=init_obs_id)
+            # custom_logger.record(key=f"eval{idstr}_{eval_id}/init_obs", value=init_obs_id)
         else:
             wandb.log(
                 {

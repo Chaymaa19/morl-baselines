@@ -409,7 +409,7 @@ class Envelope(MOPolicy, MOAgent):
         Returns: an integer representing the action to take.
         """
         if self.np_random.random() < self.epsilon:
-            return self.env.action_space.sample()
+            return self.env.action_space.sample(mask=self.env.action_masks().astype(np.int8)) # TODO: això només funciona amb nxg
         else:
             return self.max_action(obs, w)
 
@@ -595,7 +595,7 @@ class Envelope(MOPolicy, MOAgent):
 
             begin_time = time.time()
             if self.global_step < self.learning_starts:
-                action = self.env.action_space.sample()
+                action = self.env.action_space.sample(mask=self.env.action_masks().astype(np.int8)) # TODO: això només funca per nxg
             else:
                 action = self.act(th.as_tensor(obs).float().to(self.device), tensor_w)
             time_selecting_action += (time.time() - begin_time)

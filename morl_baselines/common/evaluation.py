@@ -238,7 +238,9 @@ def log_all_progress_metrics(
         time_logging_metrics: float = None,
         time_selecting_action: float = None,
         custom_logger: Optional[Logger] = None,
-        log_progress_every: int = None
+        log_progress_every: int = None,
+        mean_episode_length: int = None,
+        num_invalid_episodes: int = None
 ):
     custom_logger.record(key="global_step", value=global_step)
     custom_logger.record(key="eval/num_pf_solutions", value=num_pf_solutions)
@@ -252,6 +254,8 @@ def log_all_progress_metrics(
     custom_logger.record(key="metrics/iteration_time_computing_metrics", value=time_logging_metrics)
     custom_logger.record(key="metrics/iteration_time_selecting_action", value=time_selecting_action)
     custom_logger.record(key="metrics/total_elapsed_time", value=elapsed_time)
+    custom_logger.record(key="metrics/mean_episode_length", value=mean_episode_length)
+    custom_logger.record(key="metrics/num_invalid_episodes", value=num_invalid_episodes)
 
 
 def seed_everything(seed: int):

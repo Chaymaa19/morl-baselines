@@ -577,7 +577,7 @@ class Envelope(MOPolicy, MOAgent):
         w = weight if weight is not None else random_weights(self.reward_dim, 1, dist="gaussian", rng=self.np_random)
         tensor_w = th.tensor(w).float().to(self.device)
 
-        # Timers
+        # Timers and counters
         iteration_begin_time = time.time()
         train_begin_time = time.time()
         step_time = 0
@@ -585,6 +585,9 @@ class Envelope(MOPolicy, MOAgent):
         time_logging_metrics = -1
         time_selecting_action = 0
         eval_time = 0
+        episode_steps = 0
+        episode_lens = []
+        iteration_num_invalid_episodes = 0
 
         for _ in range(1, total_timesteps + 1):
             if total_episodes is not None and num_episodes == total_episodes:
@@ -600,6 +603,7 @@ class Envelope(MOPolicy, MOAgent):
             begin_step = time.time()
             next_obs, vec_reward, terminated, truncated, info = self.env.step(action)
             step_time += (time.time() - begin_step)
+            episode_steps += 1
             self.global_step += 1
 
             self.replay_buffer.add(obs, action, vec_reward, next_obs, terminated)
@@ -642,7 +646,9 @@ class Envelope(MOPolicy, MOAgent):
                     time_selecting_action=time_selecting_action,
                     # epsilon_decay_time=epsilon_decay_time,
                     custom_logger=self.logger,
-                    log_progress_every=log_progress_every
+                    log_progress_every=log_progress_every,
+                    mean_episode_length=int(sum(episode_lens) / num_episodes),
+                    num_invalid_episodes=iteration_num_invalid_episodes
                 )
                 time_logging_metrics = time.time() - begin_time
                 self.logger.dump(step=self.global_step)
@@ -652,6 +658,8 @@ class Envelope(MOPolicy, MOAgent):
                 update_time = 0
                 eval_time = 0
                 time_selecting_action = 0
+                episode_lens = []
+                iteration_num_invalid_episodes = 0
                 # epsilon_decay_time = 0
 
                 # iteration_begin_time = time.time()
@@ -665,6 +673,10 @@ class Envelope(MOPolicy, MOAgent):
                 # )
 
             if terminated or truncated:
+                if truncated:
+                    iteration_num_invalid_episodes += 1  # In nxg, invalid episodes are indicated with truncated to True
+                episode_lens.append(episode_steps)
+                episode_steps = 0
                 obs, _ = self.env.reset()
                 num_episodes += 1
                 self.num_episodes += 1

@@ -204,7 +204,8 @@ class PQL(MOAgent):
             int: The selected action.
         """
         if self.np_random.uniform(0, 1) < self.epsilon:
-            return self.np_random.integers(self.num_actions)
+            # return self.np_random.integers(self.num_actions)
+            return self.env.action_space.sample(mask=self.env.action_masks().astype(np.int8)) # TODO: això només funciona amb nxg
         else:
             action_scores = score_func(state)
             return self.np_random.choice(np.argwhere(action_scores == np.max(action_scores)).flatten())

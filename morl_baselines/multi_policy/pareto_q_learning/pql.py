@@ -205,6 +205,8 @@ class PQL(MOAgent):
         """
         if self.np_random.uniform(0, 1) < self.epsilon:
             # return self.np_random.integers(self.num_actions)
+            print("Sampling valid action")
+
             return self.env.action_space.sample(mask=self.env.action_masks().astype(np.int8)) # TODO: això només funciona amb nxg
         else:
             action_scores = score_func(state)

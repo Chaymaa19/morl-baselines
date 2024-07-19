@@ -20,6 +20,14 @@ from morl_baselines.common.utils import linearly_decaying_value
 from morl_baselines.common.logger import Logger
 
 
+class PQLPolicy:
+    def __init__(self, target: np.ndarray, applied_actions: List[int], total_reward: np.ndarray, done: bool):
+        self.target = target
+        self.applied_actions = applied_actions
+        self.total_reward = total_reward
+        self.done = done
+
+
 class PQL(MOAgent):
     """Pareto Q-learning.
 
@@ -207,7 +215,8 @@ class PQL(MOAgent):
             # return self.np_random.integers(self.num_actions)
             print("Sampling valid action")
 
-            return self.env.action_space.sample(mask=self.env.action_masks().astype(np.int8)) # TODO: això només funciona amb nxg
+            return self.env.action_space.sample(
+                mask=self.env.action_masks().astype(np.int8))  # TODO: això només funciona amb nxg
         else:
             action_scores = score_func(state)
             return self.np_random.choice(np.argwhere(action_scores == np.max(action_scores)).flatten())
@@ -485,6 +494,41 @@ class PQL(MOAgent):
             target = new_target
 
         return actions_list, total_rew
+
+    def get_all_policies_from_state(self, tracked_policies: List[PQLPolicy], env: gym.Env, tol=1e-3):
+        # Check if there's any undone policy
+        while any(map(lambda policy: not policy.done, tracked_policies)):
+            undone_policies = [policy for policy in tracked_policies if not policy.done]
+            for policy in undone_policies:
+                # Reset environment and apply the policy's actions
+                episode_reward = np.zeros(self.num_objectives)
+                state, _ = env.reset()
+                for action in policy.applied_actions:
+                    state, reward, terminated, truncated, _ = env.step(action)
+                    episode_reward += reward
+
+                # For each found action create a new PQLPolicy
+                for action in range(self.num_actions):
+                    state = np.ravel_multi_index(state, self.env_shape)
+                    im_rew = self.avg_reward[state, action]
+                    non_dominated_set = self.non_dominated[str(state)][str(action)]
+
+                    for q in non_dominated_set:
+                        q = np.array(q)
+                        dist = np.sum(np.abs(self.gamma * q + im_rew - policy.target))
+                        if dist < tol:
+                            # Found action corresponding to q vector
+                            state, reward, terminated, truncated, _ = env.step(action)
+                            episode_reward += reward
+                            new_policy = PQLPolicy(target=q, applied_actions=policy.applied_actions + [action],
+                                                   total_reward=episode_reward, done=terminated or truncated)
+                            tracked_policies.append(new_policy)
+
+                # Pop tracked policy from list of tracked policies
+                tracked_policies.remove(policy)
+
+        # Return final results
+        return tracked_policies
 
     def get_local_pcs(self, state: int = 0):
         """Collect the local PCS in a given state.

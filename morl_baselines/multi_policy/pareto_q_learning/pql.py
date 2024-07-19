@@ -518,10 +518,10 @@ class PQL(MOAgent):
                         dist = np.sum(np.abs(self.gamma * q + im_rew - policy.target))
                         if dist < tol:
                             # Found action corresponding to q vector
-                            state, reward, terminated, truncated, _ = env.step(action)
-                            episode_reward += reward
+                            _, action_reward, terminated, truncated, _ = env.step(action)
                             new_policy = PQLPolicy(target=q, applied_actions=policy.applied_actions + [action],
-                                                   total_reward=episode_reward, done=terminated or truncated)
+                                                   total_reward=episode_reward + action_reward,
+                                                   done=terminated or truncated)
                             tracked_policies.append(new_policy)
 
                 # Pop tracked policy from list of tracked policies

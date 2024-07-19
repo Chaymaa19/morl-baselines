@@ -519,18 +519,19 @@ class PQL(MOAgent):
                         if dist < tol:
                             # Found action corresponding to q vector
                             _, action_reward, terminated, truncated, _ = env.step(action)
-                            new_policy = PQLPolicy(target=q, applied_actions=policy.applied_actions + [action],
-                                                   total_reward=episode_reward + action_reward,
-                                                   done=terminated or truncated)
-                            tracked_policies.append(new_policy)
-                            # Reset environment and apply the policy's actions
-                            episode_reward = np.zeros(self.num_objectives)
-                            state, _ = env.reset()
-                            for action in policy.applied_actions:
-                                state, reward, terminated, truncated, _ = env.step(action)
-                                episode_reward += reward
+                            if not any([set(tracked_policy.applied_actions) == set(
+                                    tracked_policy.applied_actions + [action]) for tracked_policy in tracked_policies]):
+                                new_policy = PQLPolicy(target=q, applied_actions=policy.applied_actions + [action],
+                                                       total_reward=episode_reward + action_reward,
+                                                       done=terminated or truncated)
+                                tracked_policies.append(new_policy)
+                                # Reset environment and apply the policy's actions
+                                episode_reward = np.zeros(self.num_objectives)
+                                state, _ = env.reset()
+                                for action in policy.applied_actions:
+                                    state, reward, terminated, truncated, _ = env.step(action)
+                                    episode_reward += reward
                             state = np.ravel_multi_index(state, self.env_shape)
-
 
                 # Pop tracked policy from list of tracked policies
                 tracked_policies.remove(policy)

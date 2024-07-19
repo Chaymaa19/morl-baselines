@@ -531,7 +531,7 @@ class PQL(MOAgent):
                                 for action in policy.applied_actions:
                                     state, reward, terminated, truncated, _ = env.step(action)
                                     episode_reward += reward
-                            state = np.ravel_multi_index(state, self.env_shape)
+                                state = np.ravel_multi_index(state, self.env_shape)
 
                 # Pop tracked policy from list of tracked policies
                 tracked_policies.remove(policy)

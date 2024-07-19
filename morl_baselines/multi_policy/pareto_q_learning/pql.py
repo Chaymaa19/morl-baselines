@@ -508,8 +508,8 @@ class PQL(MOAgent):
                     episode_reward += reward
 
                 # For each found action create a new PQLPolicy
+                state = np.ravel_multi_index(state, self.env_shape)
                 for action in range(self.num_actions):
-                    state = np.ravel_multi_index(state, self.env_shape)
                     im_rew = self.avg_reward[state, action]
                     non_dominated_set = self.non_dominated[str(state)][str(action)]
 

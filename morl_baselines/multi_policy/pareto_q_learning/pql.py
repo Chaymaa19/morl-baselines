@@ -523,6 +523,12 @@ class PQL(MOAgent):
                                                    total_reward=episode_reward + action_reward,
                                                    done=terminated or truncated)
                             tracked_policies.append(new_policy)
+                            # Reset environment and apply the policy's actions
+                            episode_reward = np.zeros(self.num_objectives)
+                            state, _ = env.reset()
+                            for action in policy.applied_actions:
+                                state, reward, terminated, truncated, _ = env.step(action)
+                                episode_reward += reward
 
                 # Pop tracked policy from list of tracked policies
                 tracked_policies.remove(policy)

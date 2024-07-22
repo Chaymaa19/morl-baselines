@@ -518,7 +518,7 @@ class PQL(MOAgent):
                         q = np.array(q)
                         dist = np.sum(np.abs(self.gamma * q + im_rew - policy.target))
                         if dist < tol and (not desired_sectors or env.action_manager.get_policy_from_action(action)[
-                            0].sector in desired_sectors):
+                            0]['sector'] in desired_sectors):
                             # Found action corresponding to q vector
                             _, action_reward, terminated, truncated, _ = env.step(action)
                             new_policy = PQLPolicy(target=q, applied_actions=policy.applied_actions + [action],

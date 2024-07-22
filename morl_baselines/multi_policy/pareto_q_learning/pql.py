@@ -616,7 +616,6 @@ class PQL(MOAgent):
         model.counts = counts
         model.non_dominated = non_dominated
         model.avg_reward = avg_reward
-        model.num_objectives = pql_params['num_objectives']
 
         return model
 

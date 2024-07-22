@@ -495,7 +495,8 @@ class PQL(MOAgent):
 
         return actions_list, total_rew
 
-    def get_all_policies_from_state(self, tracked_policies: List[PQLPolicy], env: gym.Env, tol=1e-3):
+    def get_all_policies_from_state(self, tracked_policies: List[PQLPolicy], env: gym.Env, tol=1e-3,
+                                    desired_sectors: List[str] = None):
         # Check if there's any undone policy
         while any(map(lambda policy: not policy.done, tracked_policies)):
             undone_policies = [policy for policy in tracked_policies if not policy.done]
@@ -516,7 +517,8 @@ class PQL(MOAgent):
                     for q in non_dominated_set:
                         q = np.array(q)
                         dist = np.sum(np.abs(self.gamma * q + im_rew - policy.target))
-                        if dist < tol:
+                        if dist < tol and (not desired_sectors or env.action_manager.get_policy_from_action(action)[
+                            0].sector in desired_sectors):
                             # Found action corresponding to q vector
                             _, action_reward, terminated, truncated, _ = env.step(action)
                             new_policy = PQLPolicy(target=q, applied_actions=policy.applied_actions + [action],
@@ -530,7 +532,6 @@ class PQL(MOAgent):
                                 state, reward, terminated, truncated, _ = env.step(action)
                                 episode_reward += reward
                             state = np.ravel_multi_index(state, self.env_shape)
-
 
                 # Pop tracked policy from list of tracked policies
                 tracked_policies.remove(policy)

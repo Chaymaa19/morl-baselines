@@ -619,6 +619,8 @@ class PQL(MOAgent):
 
     def close_all_files(self):
         self.non_dominated.close()
+        del self.counts
+        del self.avg_reward
 
 
 # TODO: move somewhere else

@@ -2,7 +2,7 @@
 import os
 import random
 from itertools import chain
-from typing import Callable, List, Optional, Union
+from typing import Callable, List, Optional, Union, Dict
 
 import gymnasium as gym
 import numpy as np
@@ -35,6 +35,7 @@ from morl_baselines.common.prioritized_buffer import PrioritizedReplayBuffer
 from morl_baselines.common.utils import linearly_decaying_value, unique_tol
 from morl_baselines.common.weights import equally_spaced_weights
 from morl_baselines.multi_policy.linear_support.linear_support import LinearSupport
+from morl_baselines.common.logger import Logger
 
 
 class QNet(nn.Module):
@@ -85,48 +86,49 @@ class GPIPD(MOPolicy, MOAgent):
     """
 
     def __init__(
-        self,
-        env,
-        learning_rate: float = 3e-4,
-        initial_epsilon: float = 0.01,
-        final_epsilon: float = 0.01,
-        epsilon_decay_steps: int = None,  # None == fixed epsilon
-        tau: float = 1.0,
-        target_net_update_freq: int = 1000,  # ignored if tau != 1.0
-        buffer_size: int = int(1e6),
-        net_arch: List = [256, 256, 256, 256],
-        num_nets: int = 2,
-        batch_size: int = 128,
-        learning_starts: int = 100,
-        gradient_updates: int = 20,
-        gamma: float = 0.99,
-        max_grad_norm: Optional[float] = None,
-        use_gpi: bool = True,
-        dyna: bool = True,
-        per: bool = True,
-        gpi_pd: bool = True,
-        alpha_per: float = 0.6,
-        min_priority: float = 0.01,
-        drop_rate: float = 0.01,
-        layer_norm: bool = True,
-        dynamics_normalize_inputs: bool = False,
-        dynamics_uncertainty_threshold: float = 1.5,
-        dynamics_train_freq: Callable = lambda timestep: 250,
-        dynamics_rollout_len: int = 1,
-        dynamics_rollout_starts: int = 5000,
-        dynamics_rollout_freq: int = 250,
-        dynamics_rollout_batch_size: int = 25000,
-        dynamics_buffer_size: int = 100000,
-        dynamics_net_arch: List = [256, 256, 256],
-        dynamics_ensemble_size: int = 5,
-        dynamics_num_elites: int = 2,
-        real_ratio: float = 0.5,
-        project_name: str = "MORL-Baselines",
-        experiment_name: str = "GPI-PD",
-        wandb_entity: Optional[str] = None,
-        log: bool = True,
-        seed: Optional[int] = None,
-        device: Union[th.device, str] = "auto",
+            self,
+            env,
+            learning_rate: float = 3e-4,
+            initial_epsilon: float = 0.01,
+            final_epsilon: float = 0.01,
+            epsilon_decay_steps: int = None,  # None == fixed epsilon
+            tau: float = 1.0,
+            target_net_update_freq: int = 1000,  # ignored if tau != 1.0
+            buffer_size: int = int(1e6),
+            net_arch: List = [256, 256, 256, 256],
+            num_nets: int = 2,
+            batch_size: int = 128,
+            learning_starts: int = 100,
+            gradient_updates: int = 20,
+            gamma: float = 0.99,
+            max_grad_norm: Optional[float] = None,
+            use_gpi: bool = True,
+            dyna: bool = True,
+            per: bool = True,
+            gpi_pd: bool = True,
+            alpha_per: float = 0.6,
+            min_priority: float = 0.01,
+            drop_rate: float = 0.01,
+            layer_norm: bool = True,
+            dynamics_normalize_inputs: bool = False,
+            dynamics_uncertainty_threshold: float = 1.5,
+            dynamics_train_freq: Callable = lambda timestep: 250,
+            dynamics_rollout_len: int = 1,
+            dynamics_rollout_starts: int = 5000,
+            dynamics_rollout_freq: int = 250,
+            dynamics_rollout_batch_size: int = 25000,
+            dynamics_buffer_size: int = 100000,
+            dynamics_net_arch: List = [256, 256, 256],
+            dynamics_ensemble_size: int = 5,
+            dynamics_num_elites: int = 2,
+            real_ratio: float = 0.5,
+            project_name: str = "MORL-Baselines",
+            experiment_name: str = "GPI-PD",
+            wandb_entity: Optional[str] = None,
+            log: bool = True,
+            seed: Optional[int] = None,
+            device: Union[th.device, str] = "auto",
+            logger: Optional[Logger] = None
     ):
         """Initialize the GPI-PD algorithm.
 
@@ -269,7 +271,8 @@ class GPIPD(MOPolicy, MOAgent):
 
         # logging
         self.log = log
-        if self.log:
+        self.logger = logger
+        if self.log and not self.logger:
             self.setup_wandb(project_name, experiment_name, wandb_entity)
 
     def get_config(self):
@@ -383,7 +386,8 @@ class GPIPD(MOPolicy, MOAgent):
                 obs_m = obs.unsqueeze(1).repeat(1, M.size(1), 1)
 
                 psi_values = self.q_nets[0](obs_m, M)
-                q_values = th.einsum("r,bar->ba", w, psi_values).view(obs.size(0), len(self.weight_support), self.action_dim)
+                q_values = th.einsum("r,bar->ba", w, psi_values).view(obs.size(0), len(self.weight_support),
+                                                                      self.action_dim)
                 max_q, ac = th.max(q_values, dim=2)
                 pi = th.argmax(max_q, dim=1)
                 actions = ac.gather(1, pi.unsqueeze(1))
@@ -404,16 +408,24 @@ class GPIPD(MOPolicy, MOAgent):
                 obs = next_obs_pred[nonterm_mask]
 
         if self.log:
-            wandb.log(
-                {
-                    "dynamics/uncertainty_mean": uncertainties.mean(),
-                    "dynamics/uncertainty_max": uncertainties.max(),
-                    "dynamics/uncertainty_min": uncertainties.min(),
-                    "dynamics/model_buffer_size": len(self.dynamics_buffer),
-                    "dynamics/imagined_transitions": num_added_imagined_transitions,
-                    "global_step": self.global_step,
-                },
-            )
+            if not self.logger:
+                wandb.log(
+                    {
+                        "dynamics/uncertainty_mean": uncertainties.mean(),
+                        "dynamics/uncertainty_max": uncertainties.max(),
+                        "dynamics/uncertainty_min": uncertainties.min(),
+                        "dynamics/model_buffer_size": len(self.dynamics_buffer),
+                        "dynamics/imagined_transitions": num_added_imagined_transitions,
+                        "global_step": self.global_step,
+                    },
+                )
+            else:
+                self.logger.record(key="dynamics/uncertainty_mean", value=uncertainties.mean())
+                self.logger.record(key="dynamics/uncertainty_max", value=uncertainties.max())
+                self.logger.record(key="dynamics/uncertainty_min", value=uncertainties.min())
+                self.logger.record(key="dynamics/model_buffer_size", value=len(self.dynamics_buffer))
+                self.logger.record(key="dynamics/imagined_transitions", value=num_added_imagined_transitions)
+                self.logger.record(key="global_step", value=self.global_step)
 
     def update(self, weight: th.Tensor):
         """Update the parameters of the networks."""
@@ -434,7 +446,8 @@ class GPIPD(MOPolicy, MOAgent):
                 )
                 # Half of the batch uses the given weight vector, the other half uses weights sampled from the support set
                 w = th.vstack(
-                    [weight for _ in range(s_obs.size(0) // 2)] + random.choices(self.weight_support, k=s_obs.size(0) // 2)
+                    [weight for _ in range(s_obs.size(0) // 2)] + random.choices(self.weight_support,
+                                                                                 k=s_obs.size(0) // 2)
                 )
             else:
                 w = weight.repeat(s_obs.size(0), 1)
@@ -495,12 +508,18 @@ class GPIPD(MOPolicy, MOAgent):
 
             if self.max_grad_norm is not None:
                 if self.log and self.global_step % 100 == 0:
-                    wandb.log(
-                        {
-                            "losses/grad_norm": get_grad_norm(self.q_nets[0].parameters()).item(),
-                            "global_step": self.global_step,
-                        },
-                    )
+                    if not self.logger:
+                        wandb.log(
+                            {
+                                "losses/grad_norm": get_grad_norm(self.q_nets[0].parameters()).item(),
+                                "global_step": self.global_step,
+                            },
+                        )
+                    else:
+                        self.logger.record(key="losses/grad_norm",
+                                           value=get_grad_norm(self.q_nets[0].parameters()).item())
+                        self.logger.record(key="global_step", value=self.global_step)
+
                 for psi_net in self.q_nets:
                     th.nn.utils.clip_grad_norm_(psi_net.parameters(), self.max_grad_norm)
             self.q_optim.step()
@@ -532,36 +551,55 @@ class GPIPD(MOPolicy, MOAgent):
 
         if self.epsilon_decay_steps is not None:
             self.epsilon = linearly_decaying_value(
-                self.initial_epsilon, self.epsilon_decay_steps, self.global_step, self.learning_starts, self.final_epsilon
+                self.initial_epsilon, self.epsilon_decay_steps, self.global_step, self.learning_starts,
+                self.final_epsilon
             )
 
         if self.log and self.global_step % 100 == 0:
             if self.per:
-                wandb.log(
-                    {
-                        "metrics/mean_priority": np.mean(priority),
-                        "metrics/max_priority": np.max(priority),
-                        "metrics/mean_td_error_w": per.abs().mean().item(),
-                    },
-                    commit=False,
-                )
+                if not self.logger:
+                    wandb.log(
+                        {
+                            "metrics/mean_priority": np.mean(priority),
+                            "metrics/max_priority": np.max(priority),
+                            "metrics/mean_td_error_w": per.abs().mean().item(),
+                        },
+                        commit=False,
+                    )
+                else:
+                    self.logger.record(key="metrics/mean_priority", value=np.mean(priority))
+                    self.logger.record(key="metrics/max_priority", value=np.max(priority))
+                    self.logger.record(key="metrics/mean_td_error_w", value=per.abs().mean().item())
+
             if self.gpi_pd:
+                if not self.logger:
+                    wandb.log(
+                        {
+                            "metrics/mean_gpriority": np.mean(gpriority),
+                            "metrics/max_gpriority": np.max(gpriority),
+                            "metrics/mean_gtd_error_w": gper.abs().mean().item(),
+                            "metrics/mean_absolute_diff_gtd_td": (gper - per).abs().mean().item(),
+                        },
+                        commit=False,
+                    )
+                else:
+                    self.logger.record(key="metrics/mean_priority", value=np.mean(priority))
+                    self.logger.record(key="metrics/max_priority", value=np.max(priority))
+                    self.logger.record(key="metrics/mean_td_error_w", value=per.abs().mean().item())
+                    self.logger.record(key="metrics/mean_absolute_diff_gtd_td", value=(gper - per).abs().mean().item())
+
+            if not self.logger:
                 wandb.log(
                     {
-                        "metrics/mean_gpriority": np.mean(gpriority),
-                        "metrics/max_gpriority": np.max(gpriority),
-                        "metrics/mean_gtd_error_w": gper.abs().mean().item(),
-                        "metrics/mean_absolute_diff_gtd_td": (gper - per).abs().mean().item(),
+                        "losses/critic_loss": np.mean(critic_losses),
+                        "metrics/epsilon": self.epsilon,
+                        "global_step": self.global_step,
                     },
-                    commit=False,
                 )
-            wandb.log(
-                {
-                    "losses/critic_loss": np.mean(critic_losses),
-                    "metrics/epsilon": self.epsilon,
-                    "global_step": self.global_step,
-                },
-            )
+            else:
+                self.logger.record(key="losses/critic_loss", value=np.mean(critic_losses))
+                self.logger.record(key="metrics/epsilon", value=self.epsilon)
+                self.logger.record(key="global_step", value=self.global_step)
 
     @th.no_grad()
     def gpi_action(self, obs: th.Tensor, w: th.Tensor, return_policy_index=False, include_w=False):
@@ -600,7 +638,8 @@ class GPIPD(MOPolicy, MOAgent):
 
     def _act(self, obs: th.Tensor, w: th.Tensor) -> int:
         if self.np_random.random() < self.epsilon:
-            return self.env.action_space.sample()
+            return self.env.action_space.sample(
+                mask=self.env.action_masks().astype(np.int8))  # TODO: això només funciona amb nxg
         else:
             if self.use_gpi:
                 action, policy_index = self.gpi_action(obs, w, return_policy_index=True)
@@ -633,7 +672,8 @@ class GPIPD(MOPolicy, MOAgent):
         for i in range(num_batches):
             b = i * 1000
             e = min((i + 1) * 1000, obs_s.shape[0])
-            obs, actions, rewards, next_obs, dones = obs_s[b:e], actions_s[b:e], rewards_s[b:e], next_obs_s[b:e], dones_s[b:e]
+            obs, actions, rewards, next_obs, dones = obs_s[b:e], actions_s[b:e], rewards_s[b:e], next_obs_s[
+                                                                                                 b:e], dones_s[b:e]
             obs, actions, rewards, next_obs, dones = (
                 th.tensor(obs).to(self.device),
                 th.tensor(actions).to(self.device),
@@ -642,10 +682,12 @@ class GPIPD(MOPolicy, MOAgent):
                 th.tensor(dones).to(self.device),
             )
             q_values = self.q_nets[0](obs, w.repeat(obs.size(0), 1))
-            q_a = q_values.gather(1, actions.long().reshape(-1, 1, 1).expand(q_values.size(0), 1, q_values.size(2))).squeeze(1)
+            q_a = q_values.gather(1, actions.long().reshape(-1, 1, 1).expand(q_values.size(0), 1,
+                                                                             q_values.size(2))).squeeze(1)
 
             if self.gpi_pd:
-                max_next_q, _ = self._envelope_target(next_obs, w.repeat(next_obs.size(0), 1), th.stack(self.weight_support))
+                max_next_q, _ = self._envelope_target(next_obs, w.repeat(next_obs.size(0), 1),
+                                                      th.stack(self.weight_support))
             else:
                 next_q_values = self.q_nets[0](next_obs, w.repeat(next_obs.size(0), 1))
                 max_q = th.einsum("r,bar->ba", w, next_q_values)
@@ -688,7 +730,9 @@ class GPIPD(MOPolicy, MOAgent):
             2,
             ac.unsqueeze(2).unsqueeze(3).expand(next_q_target.size(0), next_q_target.size(1), 1, next_q_target.size(3)),
         ).squeeze(2)
-        max_next_q = max_next_q.gather(1, pi.reshape(-1, 1, 1).expand(max_next_q.size(0), 1, max_next_q.size(2))).squeeze(1)
+        max_next_q = max_next_q.gather(1,
+                                       pi.reshape(-1, 1, 1).expand(max_next_q.size(0), 1, max_next_q.size(2))).squeeze(
+            1)
         return max_next_q, next_q_target
 
     def set_weight_support(self, weight_list: List[np.ndarray]):
@@ -697,15 +741,15 @@ class GPIPD(MOPolicy, MOAgent):
         self.weight_support = [th.tensor(w).float().to(self.device) for w in weights_no_repeats]
 
     def train_iteration(
-        self,
-        total_timesteps: int,
-        weight: np.ndarray,
-        weight_support: List[np.ndarray],
-        change_w_every_episode: bool = True,
-        reset_num_timesteps: bool = True,
-        eval_env: Optional[gym.Env] = None,
-        eval_freq: int = 1000,
-        reset_learning_starts: bool = False,
+            self,
+            total_timesteps: int,
+            weight: np.ndarray,
+            weight_support: List[np.ndarray],
+            change_w_every_episode: bool = True,
+            reset_num_timesteps: bool = True,
+            eval_env: Optional[gym.Env] = None,
+            eval_freq: int = 1000,
+            reset_learning_starts: bool = False,
     ):
         """Train the agent for one iteration.
 
@@ -737,7 +781,8 @@ class GPIPD(MOPolicy, MOAgent):
             self.global_step += 1
 
             if self.global_step < self.learning_starts:
-                action = self.env.action_space.sample()
+                action = self.env.action_space.sample(
+                    mask=self.env.action_masks().astype(np.int8))  # TODO: això només funciona amb nxg
             else:
                 action = self._act(th.as_tensor(obs).float().to(self.device), tensor_w)
 
@@ -755,9 +800,13 @@ class GPIPD(MOPolicy, MOAgent):
                         Y = np.hstack((m_rewards, m_next_obs - m_obs))
                         mean_holdout_loss = self.dynamics.fit(X, Y)
                         if self.log:
-                            wandb.log(
-                                {"dynamics/mean_holdout_loss": mean_holdout_loss, "global_step": self.global_step},
-                            )
+                            if not self.logger:
+                                wandb.log(
+                                    {"dynamics/mean_holdout_loss": mean_holdout_loss, "global_step": self.global_step},
+                                )
+                            else:
+                                self.logger.record(key="dynamics/mean_holdout_loss", value=mean_holdout_loss)
+                                self.logger.record(key="global_step", value=self.global_step)
 
                     if self.global_step >= self.dynamics_rollout_starts and self.global_step % self.dynamics_rollout_freq == 0:
                         self._rollout_dynamics(tensor_w)
@@ -769,7 +818,8 @@ class GPIPD(MOPolicy, MOAgent):
 
                 if self.dyna and self.global_step >= self.dynamics_rollout_starts:
                     plot = visualize_eval(self, eval_env, self.dynamics, weight, compound=False, horizon=1000)
-                    wandb.log({"dynamics/predictions": wandb.Image(plot), "global_step": self.global_step})
+                    if not self.logger:
+                        wandb.log({"dynamics/predictions": wandb.Image(plot), "global_step": self.global_step})
                     plot.close()
 
             if terminated or truncated:
@@ -789,20 +839,24 @@ class GPIPD(MOPolicy, MOAgent):
             else:
                 obs = next_obs
 
+    def register_additional_config(self, conf: Dict = {}) -> None:
+        for key, value in conf.items():
+            self.logger.write_param(key=key, value=value)
+
     def train(
-        self,
-        total_timesteps: int,
-        eval_env,
-        ref_point: np.ndarray,
-        known_pareto_front: Optional[List[np.ndarray]] = None,
-        num_eval_weights_for_front: int = 100,
-        num_eval_episodes_for_front: int = 5,
-        num_eval_weights_for_eval: int = 50,
-        timesteps_per_iter: int = 10000,
-        weight_selection_algo: str = "gpi-ls",
-        eval_freq: int = 1000,
-        eval_mo_freq: int = 10000,
-        checkpoints: bool = True,
+            self,
+            total_timesteps: int,
+            eval_env,
+            ref_point: np.ndarray,
+            known_pareto_front: Optional[List[np.ndarray]] = None,
+            num_eval_weights_for_front: int = 100,
+            num_eval_episodes_for_front: int = 5,
+            num_eval_weights_for_eval: int = 50,
+            timesteps_per_iter: int = 10000,
+            weight_selection_algo: str = "gpi-ls",
+            eval_freq: int = 1000,
+            eval_mo_freq: int = 10000,
+            checkpoints: bool = True,
     ):
         """Train agent.
 
@@ -821,22 +875,39 @@ class GPIPD(MOPolicy, MOAgent):
             checkpoints (bool): Whether to save checkpoints.
         """
         if self.log:
-            self.register_additional_config(
-                {
-                    "total_timesteps": total_timesteps,
-                    "ref_point": ref_point.tolist(),
-                    "known_front": known_pareto_front,
-                    "num_eval_weights_for_front": num_eval_weights_for_front,
-                    "num_eval_episodes_for_front": num_eval_episodes_for_front,
-                    "num_eval_weights_for_eval": num_eval_weights_for_eval,
-                    "timesteps_per_iter": timesteps_per_iter,
-                    "weight_selection_algo": weight_selection_algo,
-                    "eval_freq": eval_freq,
-                    "eval_mo_freq": eval_mo_freq,
-                }
-            )
+            if not self.logger:
+                super().register_additional_config(
+                    {
+                        "total_timesteps": total_timesteps,
+                        "ref_point": ref_point.tolist(),
+                        "known_front": known_pareto_front,
+                        "num_eval_weights_for_front": num_eval_weights_for_front,
+                        "num_eval_episodes_for_front": num_eval_episodes_for_front,
+                        "num_eval_weights_for_eval": num_eval_weights_for_eval,
+                        "timesteps_per_iter": timesteps_per_iter,
+                        "weight_selection_algo": weight_selection_algo,
+                        "eval_freq": eval_freq,
+                        "eval_mo_freq": eval_mo_freq,
+                    }
+                )
+            else:
+                self.register_additional_config(
+                    {
+                        "total_timesteps": total_timesteps,
+                        "ref_point": ref_point.tolist(),
+                        "known_front": known_pareto_front,
+                        "num_eval_weights_for_front": num_eval_weights_for_front,
+                        "num_eval_episodes_for_front": num_eval_episodes_for_front,
+                        "num_eval_weights_for_eval": num_eval_weights_for_eval,
+                        "timesteps_per_iter": timesteps_per_iter,
+                        "weight_selection_algo": weight_selection_algo,
+                        "eval_freq": eval_freq,
+                        "eval_mo_freq": eval_mo_freq,
+                    }
+                )
         max_iter = total_timesteps // timesteps_per_iter
-        linear_support = LinearSupport(num_objectives=self.reward_dim, epsilon=0.0 if weight_selection_algo == "ols" else None)
+        linear_support = LinearSupport(num_objectives=self.reward_dim,
+                                       epsilon=0.0 if weight_selection_algo == "ols" else None)
 
         weight_history = []
 
@@ -893,19 +964,23 @@ class GPIPD(MOPolicy, MOAgent):
                 gpi_returns_test_tasks = [
                     policy_evaluation_mo(self, eval_env, ew, rep=num_eval_episodes_for_front)[3] for ew in eval_weights
                 ]
-                log_all_multi_policy_metrics(
-                    current_front=gpi_returns_test_tasks,
-                    hv_ref_point=ref_point,
-                    reward_dim=self.reward_dim,
-                    global_step=self.global_step,
-                    n_sample_weights=num_eval_weights_for_eval,
-                    ref_front=known_pareto_front,
-                )
+                # log_all_multi_policy_metrics(
+                #     current_front=gpi_returns_test_tasks,
+                #     hv_ref_point=ref_point,
+                #     reward_dim=self.reward_dim,
+                #     global_step=self.global_step,
+                #     n_sample_weights=num_eval_weights_for_eval,
+                #     ref_front=known_pareto_front,
+                # )
                 # This is the EU computed in the paper
                 mean_gpi_returns_test_tasks = np.mean(
                     [np.dot(ew, q) for ew, q in zip(eval_weights, gpi_returns_test_tasks)], axis=0
                 )
-                wandb.log({"eval/Mean Utility - GPI": mean_gpi_returns_test_tasks, "iteration": iter})
+                if not self.logger:
+                    wandb.log({"eval/Mean Utility - GPI": mean_gpi_returns_test_tasks, "iteration": iter})
+                else:
+                    self.logger.record(key="eval/Mean Utility - GPI", value=mean_gpi_returns_test_tasks)
+                    self.logger.record(key="iteration", value=iter)
 
             if checkpoints:
                 self.save(filename=f"GPI-PD {weight_selection_algo} iter={iter}", save_replay_buffer=False)

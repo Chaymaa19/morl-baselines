@@ -621,7 +621,8 @@ class Envelope(MOPolicy, MOAgent):
                                      custom_logger=self.logger, eval_id=idx)[3]
                     for idx, ew in enumerate(eval_weights)
                 ]
-                eval_avg_scalarized_return = sum(map(lambda pair: pair[0] * pair[1], zip(eval_weights, current_front)))
+                eval_avg_scalarized_return = sum(
+                    map(lambda pair: np.dot(pair[0], pair[1]), zip(eval_weights, current_front)))
                 eval_time = time.time() - begin_time
                 if self.logger:
                     front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}

@@ -409,7 +409,8 @@ class Envelope(MOPolicy, MOAgent):
         Returns: an integer representing the action to take.
         """
         if self.np_random.random() < self.epsilon:
-            return self.env.action_space.sample(mask=self.env.action_masks().astype(np.int8)) # TODO: això només funciona amb nxg
+            return self.env.action_space.sample(
+                mask=self.env.action_masks().astype(np.int8))  # TODO: això només funciona amb nxg
         else:
             return self.max_action(obs, w)
 
@@ -595,7 +596,8 @@ class Envelope(MOPolicy, MOAgent):
 
             begin_time = time.time()
             if self.global_step < self.learning_starts:
-                action = self.env.action_space.sample(mask=self.env.action_masks().astype(np.int8)) # TODO: això només funca per nxg
+                action = self.env.action_space.sample(
+                    mask=self.env.action_masks().astype(np.int8))  # TODO: això només funca per nxg
             else:
                 action = self.act(th.as_tensor(obs).float().to(self.device), tensor_w)
             time_selecting_action += (time.time() - begin_time)
@@ -619,6 +621,7 @@ class Envelope(MOPolicy, MOAgent):
                                      custom_logger=self.logger, eval_id=idx)[3]
                     for idx, ew in enumerate(eval_weights)
                 ]
+                eval_avg_scalarized_return = sum(map(lambda pair: pair[0] * pair[1], zip(eval_weights, current_front)))
                 eval_time = time.time() - begin_time
                 if self.logger:
                     front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
@@ -628,6 +631,7 @@ class Envelope(MOPolicy, MOAgent):
                     self.logger.write_table(key="eval/front", table=front)
                     self.logger.write_table(key="eval/weights", table=log_weights)
                     self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
+                    self.logger.record(key="eval/avg_reward", value=eval_avg_scalarized_return)
                     self.logger.dump(step=self.global_step)
 
             if self.log and self.global_step % log_progress_every == 0:

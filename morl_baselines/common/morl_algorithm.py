@@ -69,30 +69,18 @@ class MOPolicy(ABC):
         else:
             idstr = f"_{self.id}"
 
-        if custom_logger:
-            custom_logger.record(key=f"eval{idstr}_{eval_id}/scalarized_return", value=scalarized_return)
-            # custom_logger.record(key=f"eval{idstr}_{eval_id}/scalarized_discounted_return",
-            #                      value=scalarized_discounted_return) # No need since gamma is 1
-            # custom_logger.record(key=f"eval{idstr}_{eval_id}/init_obs", value=init_obs_id)
-        else:
-            wandb.log(
-                {
-                    f"eval{idstr}/scalarized_return": scalarized_return,
-                    f"eval{idstr}/scalarized_discounted_return": scalarized_discounted_return,
-                    "global_step": self.global_step,
-                }
-            )
+        wandb.log(
+            {
+                f"eval{idstr}/scalarized_return": scalarized_return,
+                f"eval{idstr}/scalarized_discounted_return": scalarized_discounted_return,
+                "global_step": self.global_step,
+            }
+        )
         for i in range(vec_return.shape[0]):
-            if custom_logger:
-                # custom_logger.record(key=f"eval{idstr}_{eval_id}/vec_{i}", value=vec_return[i])
-                # custom_logger.record(key=f"eval{idstr}_{eval_id}/discounted_vec_{i}",
-                #                      value=discounted_vec_return[i])
-                pass  # Don't log vector rewards
-            else:
-                wandb.log(
-                    {f"eval{idstr}/vec_{i}": vec_return[i],
-                     f"eval{idstr}/discounted_vec_{i}": discounted_vec_return[i]},
-                )
+            wandb.log(
+                {f"eval{idstr}/vec_{i}": vec_return[i],
+                 f"eval{idstr}/discounted_vec_{i}": discounted_vec_return[i]},
+            )
 
     def policy_eval(
             self,
@@ -124,7 +112,7 @@ class MOPolicy(ABC):
             init_obs_id
         ) = policy_evaluation_mo(self, eval_env, scalarization=scalarization, w=weights, rep=num_episodes)
 
-        if log:
+        if log and not custom_logger:
             self.__report(
                 scalarized_return,
                 scalarized_discounted_return,

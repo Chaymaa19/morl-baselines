@@ -2,7 +2,7 @@
 import os
 import random
 from itertools import chain
-from typing import List, Optional, Union
+from typing import List, Optional, Union, Dict
 
 import gymnasium
 import numpy as np
@@ -21,7 +21,7 @@ from morl_baselines.common.evaluation import (
 from morl_baselines.common.morl_algorithm import MOAgent, MOPolicy
 from morl_baselines.common.networks import layer_init, mlp, polyak_update
 from morl_baselines.common.weights import equally_spaced_weights
-
+from morl_baselines.common.logger import Logger
 
 LOG_SIG_MAX = 2
 LOG_SIG_MIN = -20
@@ -183,24 +183,25 @@ class CAPQL(MOAgent, MOPolicy):
     """
 
     def __init__(
-        self,
-        env,
-        learning_rate: float = 3e-4,
-        gamma: float = 0.99,
-        tau: float = 0.005,
-        buffer_size: int = 1000000,
-        net_arch: List = [256, 256],
-        batch_size: int = 128,
-        num_q_nets: int = 2,
-        alpha: float = 0.2,
-        learning_starts: int = 1000,
-        gradient_updates: int = 1,
-        project_name: str = "MORL-Baselines",
-        experiment_name: str = "CAPQL",
-        wandb_entity: Optional[str] = None,
-        log: bool = True,
-        seed: Optional[int] = None,
-        device: Union[th.device, str] = "auto",
+            self,
+            env,
+            learning_rate: float = 3e-4,
+            gamma: float = 0.99,
+            tau: float = 0.005,
+            buffer_size: int = 1000000,
+            net_arch: List = [256, 256],
+            batch_size: int = 128,
+            num_q_nets: int = 2,
+            alpha: float = 0.2,
+            learning_starts: int = 1000,
+            gradient_updates: int = 1,
+            project_name: str = "MORL-Baselines",
+            experiment_name: str = "CAPQL",
+            wandb_entity: Optional[str] = None,
+            log: bool = True,
+            seed: Optional[int] = None,
+            device: Union[th.device, str] = "auto",
+            logger: Optional[Logger] = None
     ):
         """CAPQL algorithm with continuous actions.
 
@@ -264,7 +265,8 @@ class CAPQL(MOAgent, MOPolicy):
         self._n_updates = 0
 
         self.log = log
-        if self.log:
+        self.logger = logger
+        if self.log and not self.logger:
             self.setup_wandb(project_name, experiment_name, wandb_entity)
 
     def get_config(self):
@@ -352,17 +354,22 @@ class CAPQL(MOAgent, MOPolicy):
                 polyak_update(q_net.parameters(), target_q_net.parameters(), self.tau)
 
         if self.log and self.global_step % 100 == 0:
-            wandb.log(
-                {
-                    "losses/critic_loss": critic_loss.item(),
-                    "losses/policy_loss": policy_loss.item(),
-                    "global_step": self.global_step,
-                },
-            )
+            if not self.logger:
+                wandb.log(
+                    {
+                        "losses/critic_loss": critic_loss.item(),
+                        "losses/policy_loss": policy_loss.item(),
+                        "global_step": self.global_step,
+                    },
+                )
+            else:
+                self.logger.record(key="losses/critic_loss", value=critic_loss.item())
+                self.logger.record(key="losses/policy_loss", value=policy_loss.item())
+                self.logger.record(key="global_step", value=self.global_step)
 
     @th.no_grad()
     def eval(
-        self, obs: Union[np.ndarray, th.Tensor], w: Union[np.ndarray, th.Tensor], torch_action=False
+            self, obs: Union[np.ndarray, th.Tensor], w: Union[np.ndarray, th.Tensor], torch_action=False
     ) -> Union[np.ndarray, th.Tensor]:
         """Evaluate the policy action for the given observation and weight vector."""
         if isinstance(obs, np.ndarray):
@@ -376,18 +383,22 @@ class CAPQL(MOAgent, MOPolicy):
 
         return action
 
+    def register_additional_config(self, conf: Dict = {}) -> None:
+        for key, value in conf.items():
+            self.logger.write_param(key=key, value=value)
+
     def train(
-        self,
-        total_timesteps: int,
-        eval_env: gymnasium.Env,
-        ref_point: np.ndarray,
-        known_pareto_front: Optional[List[np.ndarray]] = None,
-        num_eval_weights_for_front: int = 100,
-        num_eval_episodes_for_front: int = 5,
-        num_eval_weights_for_eval: int = 50,
-        eval_freq: int = 10000,
-        reset_num_timesteps: bool = False,
-        checkpoints: bool = False,
+            self,
+            total_timesteps: int,
+            eval_env: gymnasium.Env,
+            ref_point: np.ndarray,
+            known_pareto_front: Optional[List[np.ndarray]] = None,
+            num_eval_weights_for_front: int = 100,
+            num_eval_episodes_for_front: int = 5,
+            num_eval_weights_for_eval: int = 50,
+            eval_freq: int = 10000,
+            reset_num_timesteps: bool = False,
+            checkpoints: bool = False,
     ):
         """Train the agent.
 
@@ -404,18 +415,32 @@ class CAPQL(MOAgent, MOPolicy):
             checkpoints (bool): Whether to save checkpoints.
         """
         if self.log:
-            self.register_additional_config(
-                {
-                    "total_timesteps": total_timesteps,
-                    "ref_point": ref_point.tolist(),
-                    "known_front": known_pareto_front,
-                    "num_eval_weights_for_front": num_eval_weights_for_front,
-                    "num_eval_episodes_for_front": num_eval_episodes_for_front,
-                    "num_eval_weights_for_eval": num_eval_weights_for_eval,
-                    "eval_freq": eval_freq,
-                    "reset_num_timesteps": reset_num_timesteps,
-                }
-            )
+            if not self.logger:
+                super().register_additional_config(
+                    {
+                        "total_timesteps": total_timesteps,
+                        "ref_point": ref_point.tolist(),
+                        "known_front": known_pareto_front,
+                        "num_eval_weights_for_front": num_eval_weights_for_front,
+                        "num_eval_episodes_for_front": num_eval_episodes_for_front,
+                        "num_eval_weights_for_eval": num_eval_weights_for_eval,
+                        "eval_freq": eval_freq,
+                        "reset_num_timesteps": reset_num_timesteps,
+                    }
+                )
+            else:
+                self.register_additional_config(
+                    {
+                        "total_timesteps": total_timesteps,
+                        "ref_point": ref_point.tolist(),
+                        "known_front": known_pareto_front,
+                        "num_eval_weights_for_front": num_eval_weights_for_front,
+                        "num_eval_episodes_for_front": num_eval_episodes_for_front,
+                        "num_eval_weights_for_eval": num_eval_weights_for_eval,
+                        "eval_freq": eval_freq,
+                        "reset_num_timesteps": reset_num_timesteps,
+                    }
+                )
 
         eval_weights = equally_spaced_weights(self.reward_dim, n=num_eval_weights_for_front)
 
@@ -433,7 +458,7 @@ class CAPQL(MOAgent, MOPolicy):
             w = tensor_w.detach().cpu().numpy()
 
             if self.global_step < self.learning_starts:
-                action = self.env.action_space.sample()
+                action = self.env.action_space.sample(mask=self.env.action_masks().astype(np.int8))
             else:
                 with th.no_grad():
                     action = self.policy.get_action(
@@ -465,14 +490,18 @@ class CAPQL(MOAgent, MOPolicy):
                 returns_test_tasks = [
                     policy_evaluation_mo(self, eval_env, ew, rep=num_eval_episodes_for_front)[3] for ew in eval_weights
                 ]
-                log_all_multi_policy_metrics(
-                    current_front=returns_test_tasks,
-                    hv_ref_point=ref_point,
-                    reward_dim=self.reward_dim,
-                    global_step=self.global_step,
-                    n_sample_weights=num_eval_weights_for_eval,
-                    ref_front=known_pareto_front,
+                mean_returns_test_tasks = np.mean(
+                    [np.dot(ew, q) for ew, q in zip(eval_weights, returns_test_tasks)], axis=0
                 )
+                self.logger.record(key="eval/mean return", value=mean_returns_test_tasks)
+                # log_all_multi_policy_metrics(
+                #     current_front=returns_test_tasks,
+                #     hv_ref_point=ref_point,
+                #     reward_dim=self.reward_dim,
+                #     global_step=self.global_step,
+                #     n_sample_weights=num_eval_weights_for_eval,
+                #     ref_front=known_pareto_front,
+                # )
 
             # Checkpoint
             if checkpoints:

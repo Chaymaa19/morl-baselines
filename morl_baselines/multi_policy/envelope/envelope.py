@@ -616,7 +616,7 @@ class Envelope(MOPolicy, MOAgent):
                 update_time += (time.time() - begin_time)
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
-                if not use_env_custom_eval:
+                if not custom_eval_func:
                     begin_time = time.time()
                     current_front = [
                         self.policy_eval(eval_env, weights=ew, num_episodes=num_eval_episodes_for_front, log=self.log,

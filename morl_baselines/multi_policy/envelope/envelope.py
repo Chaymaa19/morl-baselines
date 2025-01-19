@@ -637,8 +637,8 @@ class Envelope(MOPolicy, MOAgent):
                         self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
                         self.logger.record(key="eval/avg_reward", value=eval_avg_scalarized_return)
                         self.logger.dump(step=self.global_step)
-                    else:
-                        eval_env.eval(training_step=self.global_step)
+                else:
+                    eval_env.eval(training_step=self.global_step)
 
             if self.log and self.global_step % log_progress_every == 0:
                 begin_time = time.time()

@@ -510,7 +510,8 @@ class Envelope(MOPolicy, MOAgent):
             num_eval_weights_for_eval: int = 50,
             reset_learning_starts: bool = False,
             verbose: bool = False,
-            log_progress_every: int = 100
+            log_progress_every: int = 100,
+            use_env_custom_eval: bool = False
     ):
         """Train the agent.
 
@@ -615,25 +616,29 @@ class Envelope(MOPolicy, MOAgent):
                 update_time += (time.time() - begin_time)
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
-                begin_time = time.time()
-                current_front = [
-                    self.policy_eval(eval_env, weights=ew, num_episodes=num_eval_episodes_for_front, log=self.log,
-                                     custom_logger=self.logger, eval_id=idx)[3]
-                    for idx, ew in enumerate(eval_weights)
-                ]
-                eval_avg_scalarized_return = sum(
-                    map(lambda pair: np.dot(pair[0], pair[1]), zip(eval_weights, current_front)))
-                eval_time = time.time() - begin_time
-                if self.logger:
-                    front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
-                    log_weights = {f"objective_{i}": [p[i - 1] for p in eval_weights] for i in
-                                   range(1, self.reward_dim + 1)}
-                    # self.logger.record(key="metrics/iteration_time", value=time.time() - iteration_begin_time)
-                    self.logger.write_table(key="eval/front", table=front)
-                    self.logger.write_table(key="eval/weights", table=log_weights)
-                    self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
-                    self.logger.record(key="eval/avg_reward", value=eval_avg_scalarized_return)
-                    self.logger.dump(step=self.global_step)
+                if not use_env_custom_eval:
+                    begin_time = time.time()
+                    current_front = [
+                        self.policy_eval(eval_env, weights=ew, num_episodes=num_eval_episodes_for_front, log=self.log,
+                                         custom_logger=self.logger, eval_id=idx)[3]
+                        for idx, ew in enumerate(eval_weights)
+                    ]
+                    eval_avg_scalarized_return = sum(
+                        map(lambda pair: np.dot(pair[0], pair[1]), zip(eval_weights, current_front)))
+                    eval_time = time.time() - begin_time
+                    if self.logger:
+                        front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in
+                                 range(1, self.reward_dim + 1)}
+                        log_weights = {f"objective_{i}": [p[i - 1] for p in eval_weights] for i in
+                                       range(1, self.reward_dim + 1)}
+                        # self.logger.record(key="metrics/iteration_time", value=time.time() - iteration_begin_time)
+                        self.logger.write_table(key="eval/front", table=front)
+                        self.logger.write_table(key="eval/weights", table=log_weights)
+                        self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
+                        self.logger.record(key="eval/avg_reward", value=eval_avg_scalarized_return)
+                        self.logger.dump(step=self.global_step)
+                    else:
+                        eval_env.eval(training_step=self.global_step)
 
             if self.log and self.global_step % log_progress_every == 0:
                 begin_time = time.time()

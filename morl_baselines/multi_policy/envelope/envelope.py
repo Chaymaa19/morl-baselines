@@ -251,14 +251,17 @@ class Envelope(MOPolicy, MOAgent):
         filename = self.experiment_name if filename is None else filename
         th.save(saved_params, save_dir + "/" + filename + ".tar")
 
-    def load(self, path: str, load_replay_buffer: bool = True):
+    def load(self, path: str, load_replay_buffer: bool = True, use_cpu: bool = False):
         """Load the model and the replay buffer if specified.
 
         Args:
             path: Path to the model.
             load_replay_buffer: Whether to load the replay buffer too.
         """
-        params = th.load(path)
+        if use_cpu:
+            params = th.load(path, map_location=th.device('cpu'))
+        else:
+            params = th.load(path)
         self.q_net.load_state_dict(params["q_net_state_dict"])
         self.target_q_net.load_state_dict(params["q_net_state_dict"])
         self.q_optim.load_state_dict(params["q_net_optimizer_state_dict"])

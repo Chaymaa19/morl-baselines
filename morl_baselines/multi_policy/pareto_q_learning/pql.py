@@ -352,22 +352,22 @@ class PQL(MOAgent):
                     time_selecting_action = 0
                     epsilon_decay_time = 0
 
-                if self.log and self.global_step % log_every == 0:
-                    begin_time = time.time()
-                    # pf = self._eval_all_policies(eval_env)
-                    pf = list(self.get_local_pcs(0))
-                    eval_time = time.time() - begin_time
+                # if self.log and self.global_step % log_every == 0:
+                #     begin_time = time.time()
+                #     # pf = self._eval_all_policies(eval_env)
+                #     pf = list(self.get_local_pcs(0))
+                #     eval_time = time.time() - begin_time
 
-                    log_all_multi_policy_metrics(
-                        current_front=pf,
-                        hv_ref_point=ref_point,
-                        reward_dim=self.reward_dim,
-                        global_step=self.global_step,
-                        n_sample_weights=num_eval_weights_for_eval,
-                        ref_front=known_pareto_front,
-                        custom_logger=self.logger
-                    )
-                    self.logger.dump(step=self.global_step)
+                #     log_all_multi_policy_metrics(
+                #         current_front=pf,
+                #         hv_ref_point=ref_point,
+                #         reward_dim=self.reward_dim,
+                #         global_step=self.global_step,
+                #         n_sample_weights=num_eval_weights_for_eval,
+                #         ref_front=known_pareto_front,
+                #         custom_logger=self.logger
+                #     )
+                #     self.logger.dump(step=self.global_step)
 
             begin_time = time.time()
             self.epsilon = linearly_decaying_value(

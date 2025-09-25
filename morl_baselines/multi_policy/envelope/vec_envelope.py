@@ -410,7 +410,7 @@ class VecEnvelope(MOPolicy, MOAgent):
         Returns: an integer representing the action to take.
         """
         if self.np_random.random() < self.epsilon:
-            return self.env.action_space.sample(mask=self.env.self.env.env_method("action_masks", indices=[env_id])[0].astype(np.int8)) # TODO: això només funciona amb nxg
+            return self.env.action_space.sample(mask=self.env.env_method("action_masks", indices=[env_id])[0].astype(np.int8)) # TODO: això només funciona amb nxg
         else:
             return self.max_action(obs, w)
 

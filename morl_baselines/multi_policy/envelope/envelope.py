@@ -611,7 +611,7 @@ class Envelope(MOPolicy, MOAgent):
             episode_steps += 1
             self.global_step += 1
 
-            self.replay_buffer.add(obs, action, vec_reward, next_obs, terminated)
+            self.replay_buffer.add(obs, action, vec_reward, next_obs, terminated or truncated)
             if self.global_step >= self.learning_starts:
                 begin_time = time.time()
                 self.update()

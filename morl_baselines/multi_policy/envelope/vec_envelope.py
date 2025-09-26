@@ -630,7 +630,6 @@ class VecEnvelope(MOPolicy, MOAgent):
             step_time += (time.time() - begin_step)
 
             episode_steps += 1
-            self.global_step += self.env.num_envs
 
             for obs, action, vec_reward, next_obs, terminated, truncated, info \
                 in zip(vec_obs, actions, vec_vec_reward, next_vec_obs, vec_terminated, vec_truncated, infos):
@@ -641,11 +640,12 @@ class VecEnvelope(MOPolicy, MOAgent):
                     next_obs if not (terminated or truncated) else info["terminal_observation"],
                     terminated or truncated
                 )
+                self.global_step += 1
 
-            if self.global_step >= self.learning_starts:
-                begin_time = time.time()
-                self.update()
-                update_time += (time.time() - begin_time)
+                if self.global_step >= self.learning_starts:
+                    begin_time = time.time()
+                    self.update()
+                    update_time += (time.time() - begin_time)
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
                 begin_time = time.time()

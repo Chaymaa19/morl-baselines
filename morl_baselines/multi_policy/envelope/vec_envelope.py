@@ -601,7 +601,7 @@ class VecEnvelope(MOPolicy, MOAgent):
         episode_lens = []
         iteration_num_invalid_episodes = 0
 
-        for _ in range(1, total_timesteps + 1):
+        for _ in range(1, total_timesteps + 1, self.env.num_envs):
             if total_episodes is not None and num_episodes >= total_episodes:
                 break
 

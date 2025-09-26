@@ -152,6 +152,9 @@ class VecEnvelope(MOPolicy, MOAgent):
             device: The device to use for training.
             group: The wandb group to use for logging.
         """
+
+        assert target_net_update_freq % env.num_envs == 0, "target_net_update_freq must be a multiple of the number of environments."
+
         MOAgent.__init__(self, env, device=device, seed=seed)
         MOPolicy.__init__(self, device)
         self.learning_rate = learning_rate
@@ -718,10 +721,8 @@ class VecEnvelope(MOPolicy, MOAgent):
                     # if self.log and "episode" in info.keys():
                     #     log_episode_info(info["episode"], np.dot, w, self.global_step, verbose=verbose)
 
-                    if vec_w[idx] is None:
-                        # w = weight if weight is not None else random_weights(self.reward_dim, 1, dist="gaussian", rng=self.np_random)
-                        w = random_weights(self.reward_dim, 1, dist="gaussian", rng=self.np_random)
-                        vec_w[idx] = w
-                        vec_tensor_w[idx] = th.tensor(w).float().to(self.device)
+                    w = random_weights(self.reward_dim, 1, dist="gaussian", rng=self.np_random)
+                    vec_w[idx] = w
+                    vec_tensor_w[idx] = th.tensor(w).float().to(self.device)
 
                 vec_obs[idx] = next_vec_obs[idx]

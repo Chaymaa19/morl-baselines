@@ -272,7 +272,7 @@ class Envelope(MOPolicy, MOAgent):
         return self.replay_buffer.sample(self.batch_size, to_tensor=True, device=self.device)
 
     @override
-    def update(self):
+    def update(self, random_sampling_dist: str):
         critic_losses = []
         for g in range(self.gradient_updates):
             if self.per:
@@ -294,7 +294,7 @@ class Envelope(MOPolicy, MOAgent):
                 ) = self.__sample_batch_experiences()
 
             sampled_w = (
-                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist="gaussian", rng=self.np_random))
+                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist, rng=self.np_random))
                 .float()
                 .to(self.device)
             )  # sample num_sample_w random weights
@@ -513,7 +513,8 @@ class Envelope(MOPolicy, MOAgent):
             num_eval_weights_for_eval: int = 50,
             reset_learning_starts: bool = False,
             verbose: bool = False,
-            log_progress_every: int = 100
+            log_progress_every: int = 100,
+            random_sampling_dist: str = "gaussian"
     ):
         """Train the agent.
 
@@ -530,6 +531,7 @@ class Envelope(MOPolicy, MOAgent):
             num_eval_episodes_for_front: number of episodes to run when evaluating the policy.
             num_eval_weights_for_eval (int): Number of weights use when evaluating the Pareto front, e.g., for computing expected utility.
             reset_learning_starts: whether to reset the learning starts. Useful when training multiple times.
+            random_sampling_dist: Random distribution to sample weights. Options are gaussian and dirichlet (uniform)
             verbose: whether to print the episode info.
         """
         if eval_env is not None:
@@ -578,7 +580,7 @@ class Envelope(MOPolicy, MOAgent):
         eval_weights = equally_spaced_weights(self.reward_dim, n=num_eval_weights_for_front)
         obs, _ = self.env.reset()
 
-        w = weight if weight is not None else random_weights(self.reward_dim, 1, dist="gaussian", rng=self.np_random)
+        w = weight if weight is not None else random_weights(self.reward_dim, 1, dist=random_sampling_dist, rng=self.np_random)
         tensor_w = th.tensor(w).float().to(self.device)
 
         # Timers and counters
@@ -614,7 +616,7 @@ class Envelope(MOPolicy, MOAgent):
             self.replay_buffer.add(obs, action, vec_reward, next_obs, terminated or truncated)
             if self.global_step >= self.learning_starts:
                 begin_time = time.time()
-                self.update()
+                self.update(random_sampling_dist=random_sampling_dist)
                 update_time += (time.time() - begin_time)
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
@@ -694,7 +696,7 @@ class Envelope(MOPolicy, MOAgent):
                 #     log_episode_info(info["episode"], np.dot, w, self.global_step, verbose=verbose)
 
                 if weight is None:
-                    w = random_weights(self.reward_dim, 1, dist="gaussian", rng=self.np_random)
+                    w = random_weights(self.reward_dim, 1, dist=random_sampling_dist, rng=self.np_random)
                     tensor_w = th.tensor(w).float().to(self.device)
 
             else:

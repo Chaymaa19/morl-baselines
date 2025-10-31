@@ -413,12 +413,14 @@ class VecEnvelope(MOPolicy, MOAgent):
         Returns: an integer representing the action to take.
         """
         if self.np_random.random() < self.epsilon:
-            return self.env.action_space.sample(mask=self.env.env_method("action_masks", indices=[env_id])[0].astype(np.int8)) # TODO: això només funciona amb nxg
+            # TODO: això només funciona amb nxg
+            return self.env.action_space.sample(mask=self.env.env_method("action_masks", indices=[env_id])[0].astype(np.int8))
         else:
-            return self.max_action(obs, w)
+            action_mask = th.as_tensor(self.env.env_method("action_masks", indices=[env_id])[0]).float().to(self.device)
+            return self.max_action(obs, w, action_mask)
 
     @th.no_grad()
-    def max_action(self, obs: th.Tensor, w: th.Tensor) -> int:
+    def max_action(self, obs: th.Tensor, w: th.Tensor, action_mask: Optional[th.Tensor] = None) -> int:
         """Select the action with the highest Q-value given an observation and weight.
 
         Args:
@@ -429,6 +431,12 @@ class VecEnvelope(MOPolicy, MOAgent):
         """
         q_values = self.q_net(obs, w)
         scalarized_q_values = th.einsum("r,bar->ba", w, q_values)
+        # Mask invalid actions by setting their Q-values to negative infinity
+        if action_mask is not None:
+            if action_mask.dim() == 1:
+                action_mask = action_mask.unsqueeze(0)
+            scalarized_q_values = scalarized_q_values.masked_fill(
+                action_mask == 0, float('-inf'))
         max_act = th.argmax(scalarized_q_values, dim=1)
         return max_act.detach().item()
 

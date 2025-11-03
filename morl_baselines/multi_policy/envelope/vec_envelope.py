@@ -28,6 +28,7 @@ from morl_baselines.common.networks import (
     polyak_update,
 )
 from morl_baselines.common.prioritized_buffer import PrioritizedReplayBuffer
+from morl_baselines.common.prioritized_masked_buffer import PrioritizedMaskedReplayBuffer
 from morl_baselines.common.utils import linearly_decaying_value
 from morl_baselines.common.weights import equally_spaced_weights, random_weights
 from morl_baselines.common.logger import Logger
@@ -59,7 +60,7 @@ class QNet(nn.Module):
         self.net = mlp(input_dim, action_dim * rew_dim, net_arch)
         self.apply(layer_init)
 
-    def forward(self, obs, w):
+    def forward(self, obs, w, action_mask=None):
         """Predict Q values for all actions.
 
         Args:
@@ -77,7 +78,18 @@ class QNet(nn.Module):
         else:
             input = th.cat((obs, w), dim=w.dim() - 1)
         q_values = self.net(input)
-        return q_values.view(-1, self.action_dim, self.rew_dim)  # Batch size X Actions X Rewards
+        q_values = q_values.view(-1, self.action_dim, self.rew_dim)  # Batch size X Actions X Rewards
+        
+         # Mask invalid actions by setting Q-values to very negative values
+        if action_mask is not None:
+            if action_mask.dim() == 1:
+                action_mask = action_mask.unsqueeze(0)
+            # Expand mask to match q_values shape: [batch, action_dim, 1]
+            mask_expanded = action_mask.unsqueeze(-1).expand(-1, -1, self.rew_dim)
+            # Set invalid actions (where mask==0) to very negative value in all reward dimensions
+            q_values = q_values.masked_fill(mask_expanded == 0, float('-inf'))
+        
+        return q_values
 
 
 class VecEnvelope(MOPolicy, MOAgent):
@@ -187,24 +199,35 @@ class VecEnvelope(MOPolicy, MOAgent):
         self.q_optim = optim.Adam(self.q_net.parameters(), lr=self.learning_rate)
 
         self.envelope = envelope
+        if not envelope:
+            raise ValueError("Unsupported feat: Action masking not included in DDQN target.")
         self.num_sample_w = num_sample_w
         self.homotopy_lambda = self.initial_homotopy_lambda
         if self.per:
-            self.replay_buffer = PrioritizedReplayBuffer(
-                self.observation_shape,
-                1,
+            # self.replay_buffer = PrioritizedReplayBuffer(
+            #     self.observation_shape,
+            #     1,
+            #     rew_dim=self.reward_dim,
+            #     max_size=buffer_size,
+            #     action_dtype=np.uint8,
+            # )
+            self.replay_buffer = PrioritizedMaskedReplayBuffer(
+                obs_shape=self.observation_shape,
+                action_dim=1,
+                num_actions=self.action_dim,
                 rew_dim=self.reward_dim,
                 max_size=buffer_size,
-                action_dtype=np.uint8,
+                action_dtype=np.uint8
             )
         else:
-            self.replay_buffer = ReplayBuffer(
-                self.observation_shape,
-                1,
-                rew_dim=self.reward_dim,
-                max_size=buffer_size,
-                action_dtype=np.uint8,
-            )
+            raise ValueError("Unsupported feat: Action masking not included for Replay Buffer")
+        #     self.replay_buffer = ReplayBuffer(
+        #         self.observation_shape,
+        #         1,
+        #         rew_dim=self.reward_dim,
+        #         max_size=buffer_size,
+        #         action_dtype=np.uint8,
+        #     )
 
         self.log = log
         self.logger = logger
@@ -276,23 +299,25 @@ class VecEnvelope(MOPolicy, MOAgent):
     def update(self, random_sampling_dist: str):
         critic_losses = []
         for g in range(self.gradient_updates):
-            if self.per:
-                (
-                    b_obs,
-                    b_actions,
-                    b_rewards,
-                    b_next_obs,
-                    b_dones,
-                    b_inds,
-                ) = self.__sample_batch_experiences()
-            else:
-                (
-                    b_obs,
-                    b_actions,
-                    b_rewards,
-                    b_next_obs,
-                    b_dones,
-                ) = self.__sample_batch_experiences()
+            # if self.per:
+            (
+                b_obs,
+                b_obs_action_masks,
+                b_actions,
+                b_rewards,
+                b_next_obs,
+                b_next_obs_action_masks,
+                b_dones,
+                b_inds,
+            ) = self.__sample_batch_experiences()
+            # else:
+            #     (
+            #         b_obs,
+            #         b_actions,
+            #         b_rewards,
+            #         b_next_obs,
+            #         b_dones,
+            #     ) = self.__sample_batch_experiences()
 
             sampled_w = (
                 th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist, rng=self.np_random))
@@ -300,22 +325,24 @@ class VecEnvelope(MOPolicy, MOAgent):
                 .to(self.device)
             )  # sample num_sample_w random weights
             w = sampled_w.repeat_interleave(b_obs.size(0), 0)  # repeat the weights for each sample
-            b_obs, b_actions, b_rewards, b_next_obs, b_dones = (
+            b_obs, b_obs_action_masks, b_actions, b_rewards, b_next_obs, b_next_obs_action_masks, b_dones = (
                 b_obs.repeat(self.num_sample_w, *(1 for _ in range(b_obs.dim() - 1))),
+                b_obs_action_masks.repeat(self.num_sample_w, 1),
                 b_actions.repeat(self.num_sample_w, 1),
                 b_rewards.repeat(self.num_sample_w, 1),
                 b_next_obs.repeat(self.num_sample_w, *(1 for _ in range(b_next_obs.dim() - 1))),
+                b_next_obs_action_masks.repeat(self.num_sample_w, 1),
                 b_dones.repeat(self.num_sample_w, 1),
             )
 
             with th.no_grad():
                 if self.envelope:
-                    target = self.envelope_target(b_next_obs, w, sampled_w)
+                    target = self.envelope_target(b_next_obs, w, sampled_w, action_masks=b_next_obs_action_masks)
                 else:
                     target = self.ddqn_target(b_next_obs, w)
                 target_q = b_rewards + (1 - b_dones) * self.gamma * target
 
-            q_values = self.q_net(b_obs, w)
+            q_values = self.q_net(b_obs, w, action_mask=b_obs_action_masks)
             q_value = q_values.gather(
                 1,
                 b_actions.long().reshape(-1, 1, 1).expand(q_values.size(0), 1, q_values.size(2)),
@@ -430,19 +457,13 @@ class VecEnvelope(MOPolicy, MOAgent):
 
         Returns: the action with the highest Q-value.
         """
-        q_values = self.q_net(obs, w)
+        q_values = self.q_net(obs, w, action_mask=action_mask)
         scalarized_q_values = th.einsum("r,bar->ba", w, q_values)
-        # Mask invalid actions by setting their Q-values to negative infinity
-        if action_mask is not None:
-            if action_mask.dim() == 1:
-                action_mask = action_mask.unsqueeze(0)
-            scalarized_q_values = scalarized_q_values.masked_fill(
-                action_mask == 0, float('-inf'))
         max_act = th.argmax(scalarized_q_values, dim=1)
         return max_act.detach().item()
 
     @th.no_grad()
-    def envelope_target(self, obs: th.Tensor, w: th.Tensor, sampled_w: th.Tensor) -> th.Tensor:
+    def envelope_target(self, obs: th.Tensor, w: th.Tensor, sampled_w: th.Tensor, action_masks: th.Tensor) -> th.Tensor:
         """Computes the envelope target for the given observation and weight.
 
         Args:
@@ -454,10 +475,11 @@ class VecEnvelope(MOPolicy, MOAgent):
         """
         # Repeat the weights for each sample
         W = sampled_w.repeat(obs.size(0), 1)
-        # Repeat the observations for each sampled weight
+        # Repeat the observations and action masks for each sampled weight
         next_obs = obs.repeat_interleave(sampled_w.size(0), 0)
+        action_masks = action_masks.repeat_interleave(sampled_w.size(0), 0)
         # Batch size X Num sampled weights X Num actions X Num objectives
-        next_q_values = self.q_net(next_obs, W).view(obs.size(0), sampled_w.size(0), self.action_dim, self.reward_dim)
+        next_q_values = self.q_net(next_obs, W, action_mask=action_masks).view(obs.size(0), sampled_w.size(0), self.action_dim, self.reward_dim)
         # Scalarized Q values for each sampled weight
         scalarized_next_q_values = th.einsum("br,bwar->bwa", w, next_q_values)
         # Max Q values for each sampled weight
@@ -466,7 +488,7 @@ class VecEnvelope(MOPolicy, MOAgent):
         pref = th.argmax(max_q, dim=1)
 
         # MO Q-values evaluated on the target network
-        next_q_values_target = self.target_q_net(next_obs, W).view(
+        next_q_values_target = self.target_q_net(next_obs, W, action_mask=action_masks).view(
             obs.size(0), sampled_w.size(0), self.action_dim, self.reward_dim
         )
 
@@ -630,9 +652,11 @@ class VecEnvelope(MOPolicy, MOAgent):
             begin_step = time.time()
 
             # SB3 trick https://stable-baselines3.readthedocs.io/en/master/_modules/stable_baselines3/common/vec_env/subproc_vec_env.html#SubprocVecEnv
+            obs_action_masks = self.env.env_method("action_masks")
             observations, rewards, dones, infos = self.env.step(actions)
             # next_vec_obs, vec_vec_reward, vec_terminated, vec_truncated, vec_info = self.env.step(action)
             next_vec_obs = observations
+            next_obs_action_masks = self.env.env_method("action_masks")
             vec_vec_reward = rewards
             vec_terminated = [done and not truncated for (done, truncated) in zip(dones, [truncated_info["TimeLimit.truncated"] for truncated_info in infos])]
             vec_truncated = [done and truncated for (done, truncated) in zip(dones, [truncated_info["TimeLimit.truncated"] for truncated_info in infos])]
@@ -642,14 +666,16 @@ class VecEnvelope(MOPolicy, MOAgent):
 
             episode_steps += 1
 
-            for obs, action, vec_reward, next_obs, terminated, truncated, info \
-                in zip(vec_obs, actions, vec_vec_reward, next_vec_obs, vec_terminated, vec_truncated, infos):
+            for obs, obs_action_mask, action, vec_reward, next_obs, next_obs_action_mask, terminated, truncated, info \
+                in zip(vec_obs, obs_action_masks, actions, vec_vec_reward, next_vec_obs, next_obs_action_masks, vec_terminated, vec_truncated, infos):
                 self.replay_buffer.add(
-                    obs,
-                    action,
-                    vec_reward,
-                    next_obs if not (terminated or truncated) else info["terminal_observation"],
-                    terminated or truncated
+                    obs=obs,
+                    obs_action_mask=obs_action_mask,
+                    action=action,
+                    reward=vec_reward,
+                    next_obs=next_obs if not (terminated or truncated) else info["terminal_observation"],
+                    next_obs_action_mask=next_obs_action_mask,
+                    done=terminated or truncated
                 )
                 self.global_step += 1
 

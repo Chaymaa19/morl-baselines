@@ -398,10 +398,11 @@ class VecEnvelope(MOPolicy, MOAgent):
                     self.logger.record(key="metrics/mean_priority", value=np.mean(priority))
 
     @override
-    def eval(self, obs: np.ndarray, w: np.ndarray) -> int:
+    def eval(self, obs: np.ndarray, w: np.ndarray, action_masks: np.array) -> int:
         obs = th.as_tensor(obs).float().to(self.device)
         w = th.as_tensor(w).float().to(self.device)
-        return self.max_action(obs, w)
+        masks = th.as_tensor(action_masks).float().to(self.device)
+        return self.max_action(obs, w, masks)
 
     def act(self, obs: th.Tensor, w: th.Tensor, env_id: int) -> int:
         """Epsilon-greedily select an action given an observation and weight.

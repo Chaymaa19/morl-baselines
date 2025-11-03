@@ -48,7 +48,13 @@ def eval_mo(
     while not done:
         if render:
             env.render()
-        obs, r, terminated, truncated, info = env.step(agent.eval(obs, w))
+        # Safely call env.action_masks() if it exists, otherwise use None
+        action_masks = getattr(env, "action_masks", None)
+        if callable(action_masks):
+            action_masks = action_masks()
+        else:
+            action_masks = None
+        obs, r, terminated, truncated, info = env.step(agent.eval(obs, w, action_masks))
         done = terminated or truncated
         vec_return += r
         disc_vec_return += gamma * r

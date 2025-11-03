@@ -87,7 +87,7 @@ class QNet(nn.Module):
             # Expand mask to match q_values shape: [batch, action_dim, 1]
             mask_expanded = action_mask.unsqueeze(-1).expand(-1, -1, self.rew_dim)
             # Set invalid actions (where mask==0) to very negative value in all reward dimensions
-            q_values = q_values.masked_fill(mask_expanded == 0, float('-inf'))
+            q_values = q_values.masked_fill(mask_expanded == 0, -1e9) # Use large negative value instead of -inf to avoid nans and errors in other operations
         
         return q_values
 

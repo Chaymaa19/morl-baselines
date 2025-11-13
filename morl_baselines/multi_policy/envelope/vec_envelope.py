@@ -1,7 +1,7 @@
 """Envelope Q-Learning implementation."""
 import os
 import time
-from typing import List, Optional, Union, Dict
+from typing import Callable, List, Optional, Union, Dict
 from typing_extensions import override
 
 import gymnasium as gym
@@ -130,7 +130,8 @@ class VecEnvelope(MOPolicy, MOAgent):
             seed: Optional[int] = None,
             device: Union[th.device, str] = "auto",
             group: Optional[str] = None,
-            logger: Optional[Logger] = None
+            logger: Optional[Logger] = None,
+            reward_transform: Optional[Callable[[th.Tensor, th.Tensor], th.Tensor]] = None,
     ):
         """Envelope Q-learning algorithm.
 
@@ -233,6 +234,10 @@ class VecEnvelope(MOPolicy, MOAgent):
         self.logger = logger
         if log and not self.logger:
             self.setup_wandb(project_name, experiment_name, wandb_entity, group)
+            
+        # Reward transform: function to modify the reward according to the received weights
+        # Used in NXG to implement a PP size penalization relative to the number of nexus indicators considered
+        self.reward_transform = reward_transform
 
     @override
     def get_config(self):
@@ -297,6 +302,12 @@ class VecEnvelope(MOPolicy, MOAgent):
 
     @override
     def update(self, random_sampling_dist: str, random_dist_config: dict = None):
+        """
+        Envelope NN update method
+
+        :param random_sampling_dist: name of the distribution to sample random weights for the update
+        :param random_dist_config: configuration (if needed) for the random distribution
+        """
         critic_losses = []
         for g in range(self.gradient_updates):
             # if self.per:
@@ -334,6 +345,9 @@ class VecEnvelope(MOPolicy, MOAgent):
                 b_next_obs_action_masks.repeat(self.num_sample_w, 1),
                 b_dones.repeat(self.num_sample_w, 1),
             )
+            # Apply reward transformations wrt weights if needed
+            if self.reward_transform is not None:
+                b_rewards = self.reward_transform(rewards=b_rewards, weights=w)
 
             with th.no_grad():
                 if self.envelope:

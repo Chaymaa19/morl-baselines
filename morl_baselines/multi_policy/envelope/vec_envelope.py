@@ -296,7 +296,7 @@ class VecEnvelope(MOPolicy, MOAgent):
         return self.replay_buffer.sample(self.batch_size, to_tensor=True, device=self.device)
 
     @override
-    def update(self, random_sampling_dist: str):
+    def update(self, random_sampling_dist: str, random_dist_config: dict = None):
         critic_losses = []
         for g in range(self.gradient_updates):
             # if self.per:
@@ -320,7 +320,7 @@ class VecEnvelope(MOPolicy, MOAgent):
             #     ) = self.__sample_batch_experiences()
 
             sampled_w = (
-                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist, rng=self.np_random))
+                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist, dist_cofig=random_dist_config, rng=self.np_random))
                 .float()
                 .to(self.device)
             )  # sample num_sample_w random weights
@@ -545,7 +545,8 @@ class VecEnvelope(MOPolicy, MOAgent):
             reset_learning_starts: bool = False,
             verbose: bool = False,
             log_progress_every: int = 100,
-            random_sampling_dist: str = "gaussian"
+            random_sampling_dist: str = "gaussian",
+            random_dist_config: dict = None
     ):
         """Train the agent.
 
@@ -562,7 +563,9 @@ class VecEnvelope(MOPolicy, MOAgent):
             num_eval_episodes_for_front: number of episodes to run when evaluating the policy.
             num_eval_weights_for_eval (int): Number of weights use when evaluating the Pareto front, e.g., for computing expected utility.
             reset_learning_starts: whether to reset the learning starts. Useful when training multiple times.
-            random_sampling_distr: Random distribution to sample weights. Options are gaussian and dirichlet (uniform)
+            random_sampling_distr: Random distribution to sample weights. Options are gaussian, dirichlet (uniform) and well spaced (more sparse)
+            random_dist_config: Parameters of the random distribution. For now, only needed to configure the well_spaced dist to configure more/less sparse weights
+                e.g. config for 'well_spaced': {'a': 2.5}
             verbose: whether to print the episode info.
         """
         log_progress_every = log_progress_every * self.env.num_envs
@@ -618,7 +621,7 @@ class VecEnvelope(MOPolicy, MOAgent):
         vec_w = []
         vec_tensor_w = []
         for _ in range(self.env.num_envs):
-            w = random_weights(self.reward_dim, 1, dist=random_sampling_dist, rng=self.np_random)
+            w = random_weights(self.reward_dim, 1, dist=random_sampling_dist, dist_config=random_dist_config, rng=self.np_random)
             vec_w.append(w)
             vec_tensor_w.append(th.tensor(w).float().to(self.device))
 
@@ -681,7 +684,7 @@ class VecEnvelope(MOPolicy, MOAgent):
 
                 if self.global_step >= self.learning_starts:
                     begin_time = time.time()
-                    self.update(random_sampling_dist=random_sampling_dist)
+                    self.update(random_sampling_dist=random_sampling_dist, random_dist_config=random_dist_config)
                     update_time += (time.time() - begin_time)
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
@@ -758,7 +761,7 @@ class VecEnvelope(MOPolicy, MOAgent):
                     # if self.log and "episode" in info.keys():
                     #     log_episode_info(info["episode"], np.dot, w, self.global_step, verbose=verbose)
 
-                    w = random_weights(self.reward_dim, 1, dist=random_sampling_dist, rng=self.np_random)
+                    w = random_weights(self.reward_dim, 1, dist=random_sampling_dist, dist_config=random_dist_config, rng=self.np_random)
                     vec_w[idx] = w
                     vec_tensor_w[idx] = th.tensor(w).float().to(self.device)
 

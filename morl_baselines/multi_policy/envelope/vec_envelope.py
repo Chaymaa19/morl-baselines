@@ -320,7 +320,7 @@ class VecEnvelope(MOPolicy, MOAgent):
             #     ) = self.__sample_batch_experiences()
 
             sampled_w = (
-                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist, dist_cofig=random_dist_config, rng=self.np_random))
+                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist, dist_config=random_dist_config, rng=self.np_random))
                 .float()
                 .to(self.device)
             )  # sample num_sample_w random weights

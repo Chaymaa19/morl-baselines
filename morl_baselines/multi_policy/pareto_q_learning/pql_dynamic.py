@@ -456,7 +456,7 @@ class DynamicPQL(MOAgent):
 
             for action in range(self.num_actions):
                 im_rew = self.avg_reward[state_id, action]
-                non_dominated_set = self.non_dominated[str(state)][str(action)]
+                non_dominated_set = self.non_dominated[str(state_id)][str(action)]
 
                 for q in non_dominated_set:
                     q = np.array(q)

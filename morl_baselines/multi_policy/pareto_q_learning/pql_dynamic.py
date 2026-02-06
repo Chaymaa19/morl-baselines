@@ -387,7 +387,8 @@ class DynamicPQL(MOAgent):
         current_gamma = 1.0
 
         while not (terminated or truncated):
-            state_id = self.state_to_id.get(state)
+            state_tuple = tuple(state.astype(int).tolist())
+            state_id = self.state_to_id.get(state_tuple)
             if state_id is None:
                 # State not seen, break
                 break
@@ -442,7 +443,8 @@ class DynamicPQL(MOAgent):
         actions_list = []
 
         while not (terminated or truncated):
-            state_id = self.state_to_id.get(state)
+            state_tuple = tuple(state.astype(int).tolist())
+            state_id = self.state_to_id.get(state_tuple)
             if state_id is None:
                 # State not seen, break
                 break
@@ -498,7 +500,8 @@ class DynamicPQL(MOAgent):
         :param state: The state to get a local PCS for. (array-like)
         :return: A set of pareto optimal vectors
         """
-        state_id = self.state_to_id.get(state)
+        state_tuple = tuple(state.astype(int).tolist())
+        state_id = self.state_to_id.get(state_tuple)
         if state_id is None:
             # State not seen, return empty set
             return set()

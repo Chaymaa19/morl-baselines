@@ -84,22 +84,6 @@ class DynamicPQL(MOAgent):
         else:
             raise Exception("PQL only supports (multi)discrete action spaces.")
 
-        if type(self.env.observation_space) == gym.spaces.Discrete:
-            self.env_shape = (self.env.observation_space.n,)
-        elif type(self.env.observation_space) == gym.spaces.MultiDiscrete:
-            self.env_shape = self.env.observation_space.nvec
-        elif (
-                type(self.env.observation_space) == gym.spaces.Box
-                and self.env.observation_space.is_bounded(manner="both")
-                and issubclass(self.env.observation_space.dtype.type, numbers.Integral)
-        ):
-            low_bound = np.array(self.env.observation_space.low)
-            high_bound = np.array(self.env.observation_space.high)
-            self.env_shape = high_bound - low_bound + 1
-        else:
-            raise Exception("PQL only supports discretizable observation spaces.")
-
-        self.num_states = np.prod(self.env_shape)
         self.num_objectives = self.env.reward_space.shape[0]
 
         if not is_loaded_checkpoint:
@@ -129,16 +113,36 @@ class DynamicPQL(MOAgent):
             self.experiment_name = experiment_name
             self.setup_wandb(project_name=self.project_name, experiment_name=self.experiment_name)
 
+    def get_config(self) -> dict:
+        """Get the configuration dictionary.
+
+        Returns:
+            Dict: A dictionary of parameters and values.
+        """
+        return {
+            "env_id": self.env.unwrapped.spec.id,
+            "ref_point": list(self.ref_point),
+            "gamma": self.gamma,
+            "initial_epsilon": self.initial_epsilon,
+            "epsilon_decay_steps": self.epsilon_decay_steps,
+            "final_epsilon": self.final_epsilon,
+            "seed": self.seed,
+        }
+
+    def register_additional_config(self, conf: Dict = {}) -> None:
+        for key, value in conf.items():
+            self.logger.write_param(key=key, value=value)
+
     def _get_state_id(self, state):
         """Get or create a state ID for the given state.
-        
+
         Args:
             state: environment state (np.ndarray)
-            
+
         Returns:
             int: The state ID
         """
-        state_tuple = tuple(state.astype(int))
+        state_tuple = tuple(state.astype(int).tolist())
         if state_tuple not in self.state_to_id:
             state_id = self.next_state_id
             self.next_state_id += 1
@@ -224,7 +228,7 @@ class DynamicPQL(MOAgent):
                 mask=self.env.action_masks().astype(np.int8))
         else:
             action_scores = score_func(state)
-            action_scores = action_scores * self.env.action_masks() # set to zero all invalid actions
+            action_scores = action_scores * self.env.action_masks()  # set to zero all invalid actions
             return self.np_random.choice(np.argwhere(action_scores == np.max(action_scores)).flatten())
 
     def calc_non_dominated(self, state: int):
@@ -512,26 +516,24 @@ class DynamicPQL(MOAgent):
         num_seen_states = len(self.seen_states)
         if num_seen_states == 0:
             # No states seen yet, create empty structures
-            counts_array = np.zeros((self.num_states, self.num_actions), dtype=np.int32)
+            counts_array = np.zeros((1, self.num_actions), dtype=np.int32)
             non_dominated_list = [
                 [{tuple(np.zeros(self.num_objectives, dtype=np.float32))} for _ in range(self.num_actions)]
-                for _ in range(self.num_states)
+                for _ in range(1)
             ]
-            avg_reward_array = np.zeros((self.num_states, self.num_actions, self.num_objectives), dtype=np.float32)
+            avg_reward_array = np.zeros((1, self.num_actions, self.num_objectives), dtype=np.float32)
         else:
             # Create arrays with size num_states (original size) but only fill seen states
-            counts_array = np.zeros((self.num_states, self.num_actions), dtype=np.int32)
+            counts_array = np.zeros((num_seen_states, self.num_actions), dtype=np.int32)
             non_dominated_list = [
                 [{tuple(np.zeros(self.num_objectives, dtype=np.float32))} for _ in range(self.num_actions)]
-                for _ in range(self.num_states)
+                for _ in range(num_seen_states)
             ]
-            avg_reward_array = np.zeros((self.num_states, self.num_actions, self.num_objectives), dtype=np.float32)
+            avg_reward_array = np.zeros((num_seen_states, self.num_actions, self.num_objectives), dtype=np.float32)
 
             # Fill arrays with data from seen states
             # Use state_id directly as array index (state_ids should be sequential starting from 0)
             for state_id, state_tuple in self.seen_states.items():
-                if state_id >= self.num_states:
-                    raise ValueError("Something is wrong with the state numbering!")
                 for action in range(self.num_actions):
                     if state_id in self.counts and action in self.counts[state_id]:
                         counts_array[state_id, action] = self.counts[state_id][action]
@@ -549,10 +551,9 @@ class DynamicPQL(MOAgent):
             "epsilon_decay_steps": self.epsilon_decay_steps,
             "final_epsilon": self.final_epsilon,
             "ref_point": self.ref_point.tolist(),
-            "num_states": int(self.num_states),
             "num_actions": int(self.num_actions),
             "num_objectives": int(self.num_objectives),
-            "num_seen_states": num_seen_states,
+            "num_states": num_seen_states,
             "next_state_id": self.next_state_id
         }
         dump_json_file(path=params_path, data=pql_params)
@@ -581,7 +582,7 @@ class DynamicPQL(MOAgent):
                                                     pql_params["num_objectives"])
 
         # Create instance of the algorithm with loaded params
-        model = PQL(
+        model = DynamicPQL(
             env=env,
             ref_point=np.array(pql_params["ref_point"]),
             gamma=pql_params["gamma"],

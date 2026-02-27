@@ -1,7 +1,7 @@
 """Envelope Q-Learning implementation."""
 import os
 import time
-from typing import List, Optional, Union, Dict
+from typing import List, Optional, Union, Dict, Callable
 from typing_extensions import override
 
 import gymnasium as gym
@@ -27,6 +27,7 @@ from morl_baselines.common.networks import (
     polyak_update,
 )
 from morl_baselines.common.prioritized_buffer import PrioritizedReplayBuffer
+from morl_baselines.common.prioritized_masked_buffer import PrioritizedMaskedReplayBuffer
 from morl_baselines.common.utils import linearly_decaying_value
 from morl_baselines.common.weights import equally_spaced_weights, random_weights
 from morl_baselines.common.logger import Logger
@@ -58,7 +59,7 @@ class QNet(nn.Module):
         self.net = mlp(input_dim, action_dim * rew_dim, net_arch)
         self.apply(layer_init)
 
-    def forward(self, obs, w):
+    def forward(self, obs, w, action_mask=None):
         """Predict Q values for all actions.
 
         Args:
@@ -76,8 +77,18 @@ class QNet(nn.Module):
         else:
             input = th.cat((obs, w), dim=w.dim() - 1)
         q_values = self.net(input)
-        return q_values.view(-1, self.action_dim, self.rew_dim)  # Batch size X Actions X Rewards
+        q_values = q_values.view(-1, self.action_dim, self.rew_dim)  # Batch size X Actions X Rewards
 
+         # Mask invalid actions by setting Q-values to very negative values
+        if action_mask is not None:
+            if action_mask.dim() == 1:
+                action_mask = action_mask.unsqueeze(0)
+            # Expand mask to match q_values shape: [batch, action_dim, 1]
+            mask_expanded = action_mask.unsqueeze(-1).expand(-1, -1, self.rew_dim)
+            # Set invalid actions (where mask==0) to very negative value in all reward dimensions
+            q_values = q_values.masked_fill(mask_expanded == 0, -1e9) # Use large negative value instead of -inf to avoid nans and errors in other operations
+
+        return q_values
 
 class Envelope(MOPolicy, MOAgent):
     """Envelope Q-Leaning Algorithm.
@@ -117,7 +128,8 @@ class Envelope(MOPolicy, MOAgent):
             seed: Optional[int] = None,
             device: Union[th.device, str] = "auto",
             group: Optional[str] = None,
-            logger: Optional[Logger] = None
+            logger: Optional[Logger] = None,
+            reward_transform: Optional[Callable[[th.Tensor, th.Tensor], th.Tensor]] = None,
     ):
         """Envelope Q-learning algorithm.
 
@@ -183,29 +195,44 @@ class Envelope(MOPolicy, MOAgent):
         self.q_optim = optim.Adam(self.q_net.parameters(), lr=self.learning_rate)
 
         self.envelope = envelope
+        if not envelope:
+            raise ValueError("Unsupported feat: Action masking not included in DDQN target.")
         self.num_sample_w = num_sample_w
         self.homotopy_lambda = self.initial_homotopy_lambda
         if self.per:
-            self.replay_buffer = PrioritizedReplayBuffer(
-                self.observation_shape,
-                1,
+            # self.replay_buffer = PrioritizedReplayBuffer(
+            #     self.observation_shape,
+            #     1,
+            #     rew_dim=self.reward_dim,
+            #     max_size=buffer_size,
+            #     action_dtype=np.uint8,
+            # )
+            self.replay_buffer = PrioritizedMaskedReplayBuffer(
+                obs_shape=self.observation_shape,
+                action_dim=1,
+                num_actions=self.action_dim,
                 rew_dim=self.reward_dim,
                 max_size=buffer_size,
-                action_dtype=np.uint8,
+                action_dtype=np.uint8
             )
         else:
-            self.replay_buffer = ReplayBuffer(
-                self.observation_shape,
-                1,
-                rew_dim=self.reward_dim,
-                max_size=buffer_size,
-                action_dtype=np.uint8,
-            )
+            raise ValueError("Unsupported feat: Action masking not included for Replay Buffer")
+        #     self.replay_buffer = ReplayBuffer(
+        #         self.observation_shape,
+        #         1,
+        #         rew_dim=self.reward_dim,
+        #         max_size=buffer_size,
+        #         action_dtype=np.uint8,
+        #     )
 
         self.log = log
         self.logger = logger
         if log and not self.logger:
             self.setup_wandb(project_name, experiment_name, wandb_entity, group)
+
+        # Reward transform: function to modify the reward according to the received weights
+        # Used in NXG to implement a PP size penalization relative to the number of nexus indicators considered
+        self.reward_transform = reward_transform
 
     @override
     def get_config(self):
@@ -259,7 +286,7 @@ class Envelope(MOPolicy, MOAgent):
             load_replay_buffer: Whether to load the replay buffer too.
         """
         if use_cpu:
-            params = th.load(path, map_location=th.device('cpu'))
+            params = th.load(path, map_location=th.device('cpu'), weights_only=False)
         else:
             params = th.load(path)
         self.q_net.load_state_dict(params["q_net_state_dict"])
@@ -272,49 +299,62 @@ class Envelope(MOPolicy, MOAgent):
         return self.replay_buffer.sample(self.batch_size, to_tensor=True, device=self.device)
 
     @override
-    def update(self, random_sampling_dist: str):
+    def update(self, random_sampling_dist: str, random_dist_config: dict = None):
+        """
+        Envelope NN update method
+
+        :param random_sampling_dist: name of the distribution to sample random weights for the update
+        :param random_dist_config: configuration (if needed) for the random distribution
+        """
         critic_losses = []
         for g in range(self.gradient_updates):
-            if self.per:
-                (
-                    b_obs,
-                    b_actions,
-                    b_rewards,
-                    b_next_obs,
-                    b_dones,
-                    b_inds,
-                ) = self.__sample_batch_experiences()
-            else:
-                (
-                    b_obs,
-                    b_actions,
-                    b_rewards,
-                    b_next_obs,
-                    b_dones,
-                ) = self.__sample_batch_experiences()
+            # if self.per:
+            (
+                b_obs,
+            b_obs_action_masks,
+                b_actions,
+                b_rewards,
+                b_next_obs,
+            b_next_obs_action_masks,
+                b_dones,
+                b_inds,
+            ) = self.__sample_batch_experiences()
+            # else:
+            #     (
+            #         b_obs,
+            #         b_actions,
+            #         b_rewards,
+            #         b_next_obs,
+            #         b_dones,
+            #     ) = self.__sample_batch_experiences()
 
             sampled_w = (
-                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist, rng=self.np_random))
+                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist, dist_config=random_dist_config, rng=self.np_random))
                 .float()
                 .to(self.device)
             )  # sample num_sample_w random weights
             w = sampled_w.repeat_interleave(b_obs.size(0), 0)  # repeat the weights for each sample
-            b_obs, b_actions, b_rewards, b_next_obs, b_dones = (
+            b_obs, b_obs_action_masks, b_actions, b_rewards, b_next_obs, b_next_obs_action_masks, b_dones = (
                 b_obs.repeat(self.num_sample_w, *(1 for _ in range(b_obs.dim() - 1))),
+                b_obs_action_masks.repeat(self.num_sample_w, 1),
                 b_actions.repeat(self.num_sample_w, 1),
                 b_rewards.repeat(self.num_sample_w, 1),
                 b_next_obs.repeat(self.num_sample_w, *(1 for _ in range(b_next_obs.dim() - 1))),
+                b_next_obs_action_masks.repeat(self.num_sample_w, 1),
                 b_dones.repeat(self.num_sample_w, 1),
             )
+            # Apply reward transformations wrt weights if needed
+            if self.reward_transform is not None:
+                b_rewards = self.reward_transform(rewards=b_rewards, weights=w)
 
             with th.no_grad():
                 if self.envelope:
-                    target = self.envelope_target(b_next_obs, w, sampled_w)
+                    target = self.envelope_target(b_next_obs, w, sampled_w, action_masks=b_next_obs_action_masks)
                 else:
                     target = self.ddqn_target(b_next_obs, w)
                 target_q = b_rewards + (1 - b_dones) * self.gamma * target
 
-            q_values = self.q_net(b_obs, w)
+            q_values = self.q_net(b_obs, w, action_mask=b_obs_action_masks)
             q_value = q_values.gather(
                 1,
                 b_actions.long().reshape(-1, 1, 1).expand(q_values.size(0), 1, q_values.size(2)),
@@ -397,10 +437,11 @@ class Envelope(MOPolicy, MOAgent):
                     self.logger.record(key="metrics/mean_priority", value=np.mean(priority))
 
     @override
-    def eval(self, obs: np.ndarray, w: np.ndarray) -> int:
+    def eval(self, obs: np.ndarray, w: np.ndarray, action_masks: np.array) -> int:
         obs = th.as_tensor(obs).float().to(self.device)
         w = th.as_tensor(w).float().to(self.device)
-        return self.max_action(obs, w)
+        masks = th.as_tensor(action_masks).float().to(self.device)
+        return self.max_action(obs, w, masks)
 
     def act(self, obs: th.Tensor, w: th.Tensor) -> int:
         """Epsilon-greedily select an action given an observation and weight.
@@ -415,10 +456,11 @@ class Envelope(MOPolicy, MOAgent):
             return self.env.action_space.sample(
                 mask=self.env.action_masks().astype(np.int8))  # TODO: això només funciona amb nxg
         else:
-            return self.max_action(obs, w)
+            action_mask = self.env.action_masks()
+            return self.max_action(obs, w, action_mask)
 
     @th.no_grad()
-    def max_action(self, obs: th.Tensor, w: th.Tensor) -> int:
+    def max_action(self, obs: th.Tensor, w: th.Tensor, action_mask: Optional[th.Tensor] = None) -> int:
         """Select the action with the highest Q-value given an observation and weight.
 
         Args:
@@ -427,13 +469,13 @@ class Envelope(MOPolicy, MOAgent):
 
         Returns: the action with the highest Q-value.
         """
-        q_values = self.q_net(obs, w)
+        q_values = self.q_net(obs, w, action_mask=action_mask)
         scalarized_q_values = th.einsum("r,bar->ba", w, q_values)
         max_act = th.argmax(scalarized_q_values, dim=1)
         return max_act.detach().item()
 
     @th.no_grad()
-    def envelope_target(self, obs: th.Tensor, w: th.Tensor, sampled_w: th.Tensor) -> th.Tensor:
+    def envelope_target(self, obs: th.Tensor, w: th.Tensor, sampled_w: th.Tensor, action_masks: th.Tensor) -> th.Tensor:
         """Computes the envelope target for the given observation and weight.
 
         Args:
@@ -445,10 +487,11 @@ class Envelope(MOPolicy, MOAgent):
         """
         # Repeat the weights for each sample
         W = sampled_w.repeat(obs.size(0), 1)
-        # Repeat the observations for each sampled weight
+        # Repeat the observations and action masks for each sampled weight
         next_obs = obs.repeat_interleave(sampled_w.size(0), 0)
+        action_masks = action_masks.repeat_interleave(sampled_w.size(0), 0)
         # Batch size X Num sampled weights X Num actions X Num objectives
-        next_q_values = self.q_net(next_obs, W).view(obs.size(0), sampled_w.size(0), self.action_dim, self.reward_dim)
+        next_q_values = self.q_net(next_obs, W, action_mask=action_masks).view(obs.size(0), sampled_w.size(0), self.action_dim, self.reward_dim)
         # Scalarized Q values for each sampled weight
         scalarized_next_q_values = th.einsum("br,bwar->bwa", w, next_q_values)
         # Max Q values for each sampled weight
@@ -457,7 +500,7 @@ class Envelope(MOPolicy, MOAgent):
         pref = th.argmax(max_q, dim=1)
 
         # MO Q-values evaluated on the target network
-        next_q_values_target = self.target_q_net(next_obs, W).view(
+        next_q_values_target = self.target_q_net(next_obs, W, action_mask=action_masks).view(
             obs.size(0), sampled_w.size(0), self.action_dim, self.reward_dim
         )
 
@@ -514,7 +557,8 @@ class Envelope(MOPolicy, MOAgent):
             reset_learning_starts: bool = False,
             verbose: bool = False,
             log_progress_every: int = 100,
-            random_sampling_dist: str = "gaussian"
+            random_sampling_dist: str = "gaussian",
+            random_dist_config: dict = None
     ):
         """Train the agent.
 
@@ -531,7 +575,9 @@ class Envelope(MOPolicy, MOAgent):
             num_eval_episodes_for_front: number of episodes to run when evaluating the policy.
             num_eval_weights_for_eval (int): Number of weights use when evaluating the Pareto front, e.g., for computing expected utility.
             reset_learning_starts: whether to reset the learning starts. Useful when training multiple times.
-            random_sampling_dist: Random distribution to sample weights. Options are gaussian and dirichlet (uniform)
+            random_sampling_distr: Random distribution to sample weights. Options are gaussian, dirichlet (uniform) and well spaced (more sparse)
+            random_dist_config: Parameters of the random distribution. For now, only needed to configure the well_spaced dist to configure more/less sparse weights
+                e.g. config for 'well_spaced': {'a': 2.5}
             verbose: whether to print the episode info.
         """
         if eval_env is not None:
@@ -608,15 +654,17 @@ class Envelope(MOPolicy, MOAgent):
             time_selecting_action += (time.time() - begin_time)
 
             begin_step = time.time()
+            obs_action_mask = self.env.action_masks()
             next_obs, vec_reward, terminated, truncated, info = self.env.step(action)
+            next_obs_action_mask = self.env.action_masks()
             step_time += (time.time() - begin_step)
             episode_steps += 1
             self.global_step += 1
 
-            self.replay_buffer.add(obs, action, vec_reward, next_obs, terminated or truncated)
+            self.replay_buffer.add(obs,obs_action_mask, action, vec_reward, next_obs, next_obs_action_mask, terminated or truncated)
             if self.global_step >= self.learning_starts:
                 begin_time = time.time()
-                self.update(random_sampling_dist=random_sampling_dist)
+                self.update(random_sampling_dist=random_sampling_dist, random_dist_config=random_dist_config)
                 update_time += (time.time() - begin_time)
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:

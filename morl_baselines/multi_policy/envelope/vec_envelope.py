@@ -131,7 +131,7 @@ class VecEnvelope(MOPolicy, MOAgent):
             device: Union[th.device, str] = "auto",
             group: Optional[str] = None,
             logger: Optional[Logger] = None,
-            reward_transform: Optional[Callable[[th.Tensor, th.Tensor], th.Tensor]] = None,
+            reward_transforms: Optional[List[Callable[[th.Tensor, th.Tensor], th.Tensor]]] = None,
     ):
         """Envelope Q-learning algorithm.
 
@@ -234,10 +234,10 @@ class VecEnvelope(MOPolicy, MOAgent):
         self.logger = logger
         if log and not self.logger:
             self.setup_wandb(project_name, experiment_name, wandb_entity, group)
-            
+
         # Reward transform: function to modify the reward according to the received weights
         # Used in NXG to implement a PP size penalization relative to the number of nexus indicators considered
-        self.reward_transform = reward_transform
+        self.reward_transforms = reward_transforms
 
     @override
     def get_config(self):
@@ -346,8 +346,9 @@ class VecEnvelope(MOPolicy, MOAgent):
                 b_dones.repeat(self.num_sample_w, 1),
             )
             # Apply reward transformations wrt weights if needed
-            if self.reward_transform is not None:
-                b_rewards = self.reward_transform(rewards=b_rewards, weights=w)
+            if self.reward_transforms:
+                for transform in self.reward_transforms:
+                    b_rewards = transform(rewards=b_rewards, weights=w)
 
             with th.no_grad():
                 if self.envelope:

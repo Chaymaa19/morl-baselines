@@ -79,16 +79,18 @@ class QNet(nn.Module):
         q_values = self.net(input)
         q_values = q_values.view(-1, self.action_dim, self.rew_dim)  # Batch size X Actions X Rewards
 
-         # Mask invalid actions by setting Q-values to very negative values
+        # Mask invalid actions by setting Q-values to very negative values
         if action_mask is not None:
             if action_mask.dim() == 1:
                 action_mask = action_mask.unsqueeze(0)
             # Expand mask to match q_values shape: [batch, action_dim, 1]
             mask_expanded = action_mask.unsqueeze(-1).expand(-1, -1, self.rew_dim)
             # Set invalid actions (where mask==0) to very negative value in all reward dimensions
-            q_values = q_values.masked_fill(mask_expanded == 0, -1e9) # Use large negative value instead of -inf to avoid nans and errors in other operations
+            q_values = q_values.masked_fill(mask_expanded == 0,
+                                            -1e9)  # Use large negative value instead of -inf to avoid nans and errors in other operations
 
         return q_values
+
 
 class Envelope(MOPolicy, MOAgent):
     """Envelope Q-Leaning Algorithm.
@@ -129,7 +131,7 @@ class Envelope(MOPolicy, MOAgent):
             device: Union[th.device, str] = "auto",
             group: Optional[str] = None,
             logger: Optional[Logger] = None,
-            reward_transform: Optional[Callable[[th.Tensor, th.Tensor], th.Tensor]] = None,
+            reward_transforms: Optional[List[Callable[[th.Tensor, th.Tensor], th.Tensor]]] = None,
     ):
         """Envelope Q-learning algorithm.
 
@@ -232,7 +234,7 @@ class Envelope(MOPolicy, MOAgent):
 
         # Reward transform: function to modify the reward according to the received weights
         # Used in NXG to implement a PP size penalization relative to the number of nexus indicators considered
-        self.reward_transform = reward_transform
+        self.reward_transforms = reward_transforms
 
     @override
     def get_config(self):
@@ -311,11 +313,11 @@ class Envelope(MOPolicy, MOAgent):
             # if self.per:
             (
                 b_obs,
-            b_obs_action_masks,
+                b_obs_action_masks,
                 b_actions,
                 b_rewards,
                 b_next_obs,
-            b_next_obs_action_masks,
+                b_next_obs_action_masks,
                 b_dones,
                 b_inds,
             ) = self.__sample_batch_experiences()
@@ -329,7 +331,8 @@ class Envelope(MOPolicy, MOAgent):
             #     ) = self.__sample_batch_experiences()
 
             sampled_w = (
-                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist, dist_config=random_dist_config, rng=self.np_random))
+                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist,
+                                         dist_config=random_dist_config, rng=self.np_random))
                 .float()
                 .to(self.device)
             )  # sample num_sample_w random weights
@@ -344,8 +347,9 @@ class Envelope(MOPolicy, MOAgent):
                 b_dones.repeat(self.num_sample_w, 1),
             )
             # Apply reward transformations wrt weights if needed
-            if self.reward_transform is not None:
-                b_rewards = self.reward_transform(rewards=b_rewards, weights=w)
+            if self.reward_transforms:
+                for transform in self.reward_transforms:
+                    b_rewards = transform(rewards=b_rewards, weights=w)
 
             with th.no_grad():
                 if self.envelope:
@@ -491,7 +495,8 @@ class Envelope(MOPolicy, MOAgent):
         next_obs = obs.repeat_interleave(sampled_w.size(0), 0)
         action_masks = action_masks.repeat_interleave(sampled_w.size(0), 0)
         # Batch size X Num sampled weights X Num actions X Num objectives
-        next_q_values = self.q_net(next_obs, W, action_mask=action_masks).view(obs.size(0), sampled_w.size(0), self.action_dim, self.reward_dim)
+        next_q_values = self.q_net(next_obs, W, action_mask=action_masks).view(obs.size(0), sampled_w.size(0),
+                                                                               self.action_dim, self.reward_dim)
         # Scalarized Q values for each sampled weight
         scalarized_next_q_values = th.einsum("br,bwar->bwa", w, next_q_values)
         # Max Q values for each sampled weight
@@ -626,7 +631,8 @@ class Envelope(MOPolicy, MOAgent):
         eval_weights = equally_spaced_weights(self.reward_dim, n=num_eval_weights_for_front)
         obs, _ = self.env.reset()
 
-        w = weight if weight is not None else random_weights(self.reward_dim, 1, dist=random_sampling_dist, rng=self.np_random)
+        w = weight if weight is not None else random_weights(self.reward_dim, 1, dist=random_sampling_dist,
+                                                             dist_config=random_dist_config, rng=self.np_random)
         tensor_w = th.tensor(w).float().to(self.device)
 
         # Timers and counters
@@ -661,7 +667,8 @@ class Envelope(MOPolicy, MOAgent):
             episode_steps += 1
             self.global_step += 1
 
-            self.replay_buffer.add(obs,obs_action_mask, action, vec_reward, next_obs, next_obs_action_mask, terminated or truncated)
+            self.replay_buffer.add(obs, obs_action_mask, action, vec_reward, next_obs, next_obs_action_mask,
+                                   terminated or truncated)
             if self.global_step >= self.learning_starts:
                 begin_time = time.time()
                 self.update(random_sampling_dist=random_sampling_dist, random_dist_config=random_dist_config)
@@ -744,7 +751,8 @@ class Envelope(MOPolicy, MOAgent):
                 #     log_episode_info(info["episode"], np.dot, w, self.global_step, verbose=verbose)
 
                 if weight is None:
-                    w = random_weights(self.reward_dim, 1, dist=random_sampling_dist, rng=self.np_random)
+                    w = random_weights(self.reward_dim, 1, dist=random_sampling_dist,
+                                       dist_config=random_dist_config, rng=self.np_random)
                     tensor_w = th.tensor(w).float().to(self.device)
 
             else:

@@ -461,7 +461,8 @@ class Envelope(MOPolicy, MOAgent):
                 mask=self.env.action_masks().astype(np.int8))  # TODO: això només funciona amb nxg
         else:
             action_mask = self.env.action_masks()
-            return self.max_action(obs, w, action_mask)
+            mask = th.as_tensor(action_mask).float().to(self.device)
+            return self.max_action(obs, w, mask)
 
     @th.no_grad()
     def max_action(self, obs: th.Tensor, w: th.Tensor, action_mask: Optional[th.Tensor] = None) -> int:

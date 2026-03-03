@@ -79,16 +79,17 @@ class QNet(nn.Module):
             input = th.cat((obs, w), dim=w.dim() - 1)
         q_values = self.net(input)
         q_values = q_values.view(-1, self.action_dim, self.rew_dim)  # Batch size X Actions X Rewards
-        
-         # Mask invalid actions by setting Q-values to very negative values
+
+        # Mask invalid actions by setting Q-values to very negative values
         if action_mask is not None:
             if action_mask.dim() == 1:
                 action_mask = action_mask.unsqueeze(0)
             # Expand mask to match q_values shape: [batch, action_dim, 1]
             mask_expanded = action_mask.unsqueeze(-1).expand(-1, -1, self.rew_dim)
             # Set invalid actions (where mask==0) to very negative value in all reward dimensions
-            q_values = q_values.masked_fill(mask_expanded == 0, -1e9) # Use large negative value instead of -inf to avoid nans and errors in other operations
-        
+            q_values = q_values.masked_fill(mask_expanded == 0,
+                                            -1e9)  # Use large negative value instead of -inf to avoid nans and errors in other operations
+
         return q_values
 
 
@@ -331,7 +332,8 @@ class VecEnvelope(MOPolicy, MOAgent):
             #     ) = self.__sample_batch_experiences()
 
             sampled_w = (
-                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist, dist_config=random_dist_config, rng=self.np_random))
+                th.tensor(random_weights(dim=self.reward_dim, n=self.num_sample_w, dist=random_sampling_dist,
+                                         dist_config=random_dist_config, rng=self.np_random))
                 .float()
                 .to(self.device)
             )  # sample num_sample_w random weights
@@ -457,7 +459,8 @@ class VecEnvelope(MOPolicy, MOAgent):
         """
         if self.np_random.random() < self.epsilon:
             # TODO: això només funciona amb nxg
-            return self.env.action_space.sample(mask=self.env.env_method("action_masks", indices=[env_id])[0].astype(np.int8))
+            return self.env.action_space.sample(
+                mask=self.env.env_method("action_masks", indices=[env_id])[0].astype(np.int8))
         else:
             action_mask = th.as_tensor(self.env.env_method("action_masks", indices=[env_id])[0]).float().to(self.device)
             return self.max_action(obs, w, action_mask)
@@ -494,7 +497,8 @@ class VecEnvelope(MOPolicy, MOAgent):
         next_obs = obs.repeat_interleave(sampled_w.size(0), 0)
         action_masks = action_masks.repeat_interleave(sampled_w.size(0), 0)
         # Batch size X Num sampled weights X Num actions X Num objectives
-        next_q_values = self.q_net(next_obs, W, action_mask=action_masks).view(obs.size(0), sampled_w.size(0), self.action_dim, self.reward_dim)
+        next_q_values = self.q_net(next_obs, W, action_mask=action_masks).view(obs.size(0), sampled_w.size(0),
+                                                                               self.action_dim, self.reward_dim)
         # Scalarized Q values for each sampled weight
         scalarized_next_q_values = th.einsum("br,bwar->bwa", w, next_q_values)
         # Max Q values for each sampled weight
@@ -636,7 +640,8 @@ class VecEnvelope(MOPolicy, MOAgent):
         vec_w = []
         vec_tensor_w = []
         for _ in range(self.env.num_envs):
-            w = random_weights(self.reward_dim, 1, dist=random_sampling_dist, dist_config=random_dist_config, rng=self.np_random)
+            w = random_weights(self.reward_dim, 1, dist=random_sampling_dist, dist_config=random_dist_config,
+                               rng=self.np_random)
             vec_w.append(w)
             vec_tensor_w.append(th.tensor(w).float().to(self.device))
 
@@ -661,7 +666,9 @@ class VecEnvelope(MOPolicy, MOAgent):
             actions = []
             for idx in range(self.env.num_envs):
                 if self.global_step < self.learning_starts:
-                    actions.append(self.env.action_space.sample(mask=self.env.env_method("action_masks", indices=[idx])[0].astype(np.int8).astype(np.int8)))  # TODO: això només funca per nxg
+                    actions.append(self.env.action_space.sample(
+                        mask=self.env.env_method("action_masks", indices=[idx])[0].astype(np.int8).astype(
+                            np.int8)))  # TODO: això només funca per nxg
                 else:
                     actions.append(self.act(th.as_tensor(vec_obs[idx]).float().to(self.device), vec_tensor_w[idx], idx))
 
@@ -676,8 +683,10 @@ class VecEnvelope(MOPolicy, MOAgent):
             next_vec_obs = observations
             next_obs_action_masks = self.env.env_method("action_masks")
             vec_vec_reward = rewards
-            vec_terminated = [done and not truncated for (done, truncated) in zip(dones, [truncated_info["TimeLimit.truncated"] for truncated_info in infos])]
-            vec_truncated = [done and truncated for (done, truncated) in zip(dones, [truncated_info["TimeLimit.truncated"] for truncated_info in infos])]
+            vec_terminated = [done and not truncated for (done, truncated) in
+                              zip(dones, [truncated_info["TimeLimit.truncated"] for truncated_info in infos])]
+            vec_truncated = [done and truncated for (done, truncated) in
+                             zip(dones, [truncated_info["TimeLimit.truncated"] for truncated_info in infos])]
             vec_info = infos
 
             step_time += (time.time() - begin_step)
@@ -685,7 +694,8 @@ class VecEnvelope(MOPolicy, MOAgent):
             episode_steps += 1
 
             for obs, obs_action_mask, action, vec_reward, next_obs, next_obs_action_mask, terminated, truncated, info \
-                in zip(vec_obs, obs_action_masks, actions, vec_vec_reward, next_vec_obs, next_obs_action_masks, vec_terminated, vec_truncated, infos):
+                    in zip(vec_obs, obs_action_masks, actions, vec_vec_reward, next_vec_obs, next_obs_action_masks,
+                           vec_terminated, vec_truncated, infos):
                 self.replay_buffer.add(
                     obs=obs,
                     obs_action_mask=obs_action_mask,
@@ -704,11 +714,19 @@ class VecEnvelope(MOPolicy, MOAgent):
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
                 begin_time = time.time()
-                current_front = [
-                    self.policy_eval(eval_env, weights=ew, num_episodes=num_eval_episodes_for_front, log=self.log,
-                                     custom_logger=self.logger, eval_id=idx)[3]
-                    for idx, ew in enumerate(eval_weights)
-                ]
+                current_front = []
+                scalarized_returns = []
+                for idx, ew in enumerate(eval_weights):
+                    result = self.policy_eval(
+                        eval_env,
+                        weights=ew,
+                        num_episodes=num_eval_episodes_for_front,
+                        log=self.log,
+                        custom_logger=self.logger,
+                        eval_id=idx
+                    )
+                    scalarized_returns.append(result[0])
+                    current_front.append(result[3])
                 eval_time = time.time() - begin_time
                 if self.logger:
                     front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
@@ -718,6 +736,7 @@ class VecEnvelope(MOPolicy, MOAgent):
                     self.logger.write_table(key="eval/front", table=front)
                     self.logger.write_table(key="eval/weights", table=log_weights)
                     self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
+                    self.logger.record(key="eval/mean_scalarized_return", value=np.mean(scalarized_returns))
                     self.logger.dump(step=self.global_step)
 
             if self.log and self.global_step % log_progress_every == 0:
@@ -776,7 +795,8 @@ class VecEnvelope(MOPolicy, MOAgent):
                     # if self.log and "episode" in info.keys():
                     #     log_episode_info(info["episode"], np.dot, w, self.global_step, verbose=verbose)
 
-                    w = random_weights(self.reward_dim, 1, dist=random_sampling_dist, dist_config=random_dist_config, rng=self.np_random)
+                    w = random_weights(self.reward_dim, 1, dist=random_sampling_dist, dist_config=random_dist_config,
+                                       rng=self.np_random)
                     vec_w[idx] = w
                     vec_tensor_w[idx] = th.tensor(w).float().to(self.device)
 

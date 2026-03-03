@@ -676,15 +676,20 @@ class Envelope(MOPolicy, MOAgent):
                 update_time += (time.time() - begin_time)
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
-                # .
                 begin_time = time.time()
-                current_front = [
-                    self.policy_eval(eval_env, weights=ew, num_episodes=num_eval_episodes_for_front, log=self.log,
-                                     custom_logger=self.logger, eval_id=idx)[3]
-                    for idx, ew in enumerate(eval_weights)
-                ]
-                eval_avg_scalarized_return = sum(
-                    map(lambda pair: np.dot(pair[0], pair[1]), zip(eval_weights, current_front)))
+                current_front = []
+                scalarized_returns = []
+                for idx, ew in enumerate(eval_weights):
+                    result = self.policy_eval(
+                        eval_env,
+                        weights=ew,
+                        num_episodes=num_eval_episodes_for_front,
+                        log=self.log,
+                        custom_logger=self.logger,
+                        eval_id=idx
+                    )
+                    scalarized_returns.append(result[0])
+                    current_front.append(result[3])
                 eval_time = time.time() - begin_time
                 if self.logger:
                     front = {f"objective_{i}": [p[i - 1] for p in current_front] for i in range(1, self.reward_dim + 1)}
@@ -694,7 +699,7 @@ class Envelope(MOPolicy, MOAgent):
                     self.logger.write_table(key="eval/front", table=front)
                     self.logger.write_table(key="eval/weights", table=log_weights)
                     self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
-                    self.logger.record(key="eval/avg_reward", value=eval_avg_scalarized_return)
+                    self.logger.record(key="eval/mean_scalarized_return", value=np.mean(scalarized_returns))
                     self.logger.dump(step=self.global_step)
 
             if self.log and self.global_step % log_progress_every == 0:

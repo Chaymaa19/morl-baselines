@@ -1,8 +1,10 @@
 """Mostly tests to make sure the algorithms are able to run."""
+
 import time
 
 import mo_gymnasium as mo_gym
 import numpy as np
+import torch as th
 from mo_gymnasium.envs.deep_sea_treasure.deep_sea_treasure import CONCAVE_MAP
 
 from morl_baselines.common.evaluation import eval_mo, eval_mo_reward_conditioned
@@ -13,6 +15,8 @@ from morl_baselines.multi_policy.gpi_pd.gpi_pd import GPIPD
 from morl_baselines.multi_policy.gpi_pd.gpi_pd_continuous_action import (
     GPIPDContinuousAction,
 )
+from morl_baselines.multi_policy.ipro.ipro import IPRO
+from morl_baselines.multi_policy.ipro.ipro_2d import IPRO2D
 from morl_baselines.multi_policy.linear_support.linear_support import LinearSupport
 from morl_baselines.multi_policy.multi_policy_moqlearning.mp_mo_q_learning import (
     MPMOQLearning,
@@ -22,6 +26,16 @@ from morl_baselines.multi_policy.pcn.pcn import PCN
 from morl_baselines.multi_policy.pgmorl.pgmorl import PGMORL
 from morl_baselines.single_policy.esr.eupg import EUPG
 from morl_baselines.single_policy.ser.mo_q_learning import MOQLearning
+from morl_baselines.single_policy.ser.nl_mo_ppo import NLMOPPO
+
+
+def make_env(env_id, gamma, kwargs):
+    def thunk():
+        env = mo_gym.make(env_id, **kwargs)
+        env = mo_gym.wrappers.MORecordEpisodeStatistics(env, gamma=gamma)
+        return env
+
+    return thunk
 
 
 def test_pql():
@@ -54,8 +68,15 @@ def test_eupg():
     env = mo_gym.make("fishwood-v0")
     eval_env = mo_gym.make("fishwood-v0")
 
-    def scalarization(reward: np.ndarray, w):
-        return min(reward[0], (reward[1] // 2) + 1)
+    def scalarization(reward: np.ndarray, w=None):
+        reward = th.tensor(reward) if not isinstance(reward, th.Tensor) else reward
+        # Handle the case when reward is a single tensor of shape (2, )
+        if reward.dim() == 1 and reward.size(0) == 2:
+            return min(reward[0], reward[1] // 2).item()
+
+        # Handle the case when reward is a tensor of shape (200, 2)
+        elif reward.dim() == 2 and reward.size(1) == 2:
+            return th.min(reward[:, 0], reward[:, 1] // 2)
 
     agent = EUPG(env, scalarization=scalarization, gamma=0.99, log=False)
     agent.train(total_timesteps=10000, eval_env=eval_env, eval_freq=100)
@@ -187,8 +208,8 @@ def test_gpi_pd():
 
 
 def test_gpi_pd_continuous_action():
-    env = mo_gym.make("mo-hopper-v4", cost_objective=False, max_episode_steps=500)
-    eval_env = mo_gym.make("mo-hopper-v4", cost_objective=False, max_episode_steps=500)
+    env = mo_gym.make("mo-hopper-v5", cost_objective=False, max_episode_steps=500)
+    eval_env = mo_gym.make("mo-hopper-v5", cost_objective=False, max_episode_steps=500)
 
     agent = GPIPDContinuousAction(
         env,
@@ -269,8 +290,8 @@ def test_pcn():
 
 
 def test_capql():
-    env = mo_gym.make("mo-hopper-v4", cost_objective=False, max_episode_steps=500)
-    eval_env = mo_gym.make("mo-hopper-v4", cost_objective=False, max_episode_steps=500)
+    env = mo_gym.make("mo-hopper-v5", cost_objective=False, max_episode_steps=500)
+    eval_env = mo_gym.make("mo-hopper-v5", cost_objective=False, max_episode_steps=500)
 
     agent = CAPQL(
         env,
@@ -289,3 +310,99 @@ def test_capql():
     assert scalarized_disc_return != 0
     assert len(vec_ret) == 2
     assert len(vec_disc_ret) == 2
+
+
+def test_nlmoppo():
+    env_id = "deep-sea-treasure-v0"
+    envs = mo_gym.wrappers.vector.MOSyncVectorEnv(
+        [make_env(env_id, gamma=1.0, kwargs={"dst_map": CONCAVE_MAP}) for _ in range(8)]
+    )
+    eval_env = make_env(env_id, gamma=1.0, kwargs={"dst_map": CONCAVE_MAP})()
+    weights = [1.0, 0.0]
+    weights_np = np.array(weights)
+    weights_th = th.tensor(weights, dtype=th.float32)
+
+    def scalarization_th(reward: th.Tensor) -> th.Tensor:
+        return th.sum(reward * weights_th, dim=-1)
+
+    def scalarization_np(reward: np.ndarray) -> np.ndarray:
+        return np.sum(reward * weights_np, axis=-1)
+
+    agent = NLMOPPO(
+        0,
+        envs,
+        gamma=1.0,
+        total_timesteps=100000,
+        num_steps=16,
+        norm_adv=False,
+        log=False,
+    )
+    agent.train(eval_env=eval_env, u_func=scalarization_th, deterministic=True)
+
+    scalar_return, scalarized_disc_return, vec_ret, vec_disc_ret = eval_mo_reward_conditioned(
+        agent,
+        env=eval_env,
+        scalarization=scalarization_np,
+    )
+    print("Scalar Return:", scalar_return)
+    print("vec return", vec_ret)
+    assert scalar_return != 0
+    assert scalarized_disc_return != 0
+    assert len(vec_ret) == 2
+    assert len(vec_disc_ret) == 2
+
+
+def test_ipro2d():
+    env_id = "deep-sea-treasure-v0"
+    ref_point = np.array([0, -25])
+    envs = mo_gym.wrappers.vector.MOSyncVectorEnv(
+        [make_env(env_id, gamma=1.0, kwargs={"dst_map": CONCAVE_MAP}) for _ in range(8)]
+    )
+    eval_env = make_env(env_id, gamma=1.0, kwargs={"dst_map": CONCAVE_MAP})()
+
+    agent = IPRO2D(
+        envs,
+        tolerance=0.0,
+        reset_agent=True,
+        gamma=1.0,
+        iter_total_timesteps=50000,
+        num_steps=16,
+        anneal_lr=False,
+        log=False,
+    )
+
+    agent.train(
+        eval_env=eval_env,
+        ref_point=ref_point,
+        deterministic=True,
+    )
+    print("Pareto Front:", agent.pf)
+    assert len(agent.pf) >= 2
+
+
+def test_ipro():
+    env_id = "deep-sea-treasure-v0"
+    ref_point = np.array([0, -25])
+    envs = mo_gym.wrappers.vector.MOSyncVectorEnv(
+        [make_env(env_id, gamma=1.0, kwargs={"dst_map": CONCAVE_MAP}) for _ in range(8)]
+    )
+    eval_env = make_env(env_id, gamma=1.0, kwargs={"dst_map": CONCAVE_MAP})()
+
+    agent = IPRO(
+        envs,
+        tolerance=0.0,
+        reset_agent=True,
+        gamma=1.0,
+        iter_total_timesteps=50000,
+        num_steps=16,
+        anneal_lr=False,
+        log=False,
+    )
+
+    agent.train(
+        eval_env=eval_env,
+        ref_point=ref_point,
+        deterministic=True,
+    )
+    print("Pareto Front:", agent.pf)
+    assert len(agent.pf) >= 2

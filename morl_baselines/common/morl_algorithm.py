@@ -1,9 +1,10 @@
 """MORL algorithm base classes."""
+
 import os
 import time
 from abc import ABC, abstractmethod
 from distutils.util import strtobool
-from typing import Dict, Optional, Union
+from typing import Dict, Literal, Optional, Union
 
 import gymnasium as gym
 import numpy as np
@@ -11,7 +12,7 @@ import torch as th
 import torch.nn
 import wandb
 from gymnasium import spaces
-from mo_gymnasium.utils import MOSyncVectorEnv
+from mo_gymnasium.wrappers.vector import MOSyncVectorEnv
 
 from morl_baselines.common.evaluation import (
     eval_mo_reward_conditioned,
@@ -176,6 +177,34 @@ class MOPolicy(ABC):
         """
         pass
 
+    def get_save_dict(self, save_replay_buffer: bool = False) -> dict:
+        """Returns a dictionary of the policy's weights and replay buffer.
+
+        Args:
+            save_replay_buffer: whether to save the replay buffer
+
+        Returns:
+            dict: dictionary of the policy's weights and replay buffer
+        """
+        pass
+
+    def save(
+        self,
+        save_dir: str = "weights/",
+        filename: Optional[str] = None,
+        save_replay_buffer: bool = False,
+    ):
+        """Save the agent's weights and replay buffer."""
+        os.makedirs(save_dir, exist_ok=True)
+        filename = filename or f"policy_{self.id}.pth"
+        save_path = os.path.join(save_dir, filename)
+        save_dict = self.get_save_dict(save_replay_buffer)
+        th.save(save_dict, save_path)
+
+    def load(self, path, load_replay_buffer=True):
+        """Load the agent's weights and replay buffer."""
+        pass
+
     def set_weights(self, weights: np.ndarray):
         """Sets new weights.
 
@@ -221,18 +250,19 @@ class MOAgent(ABC):
             self.env = env
             if isinstance(self.env.observation_space, spaces.Discrete):
                 self.observation_shape = (1,)
-                self.observation_dim = self.env.unwrapped.observation_space.n
+                self.observation_dim = self.env.observation_space.n
             else:
-                self.observation_shape = self.env.unwrapped.observation_space.shape
-                self.observation_dim = self.env.unwrapped.observation_space.shape[0]
+                self.observation_shape = self.env.observation_space.shape
+                self.observation_dim = self.env.observation_space.shape[0]
 
-            self.action_space = env.unwrapped.action_space
-            if isinstance(self.env.unwrapped.action_space, (spaces.Discrete, spaces.MultiBinary)):
+            self.action_space = env.action_space
+            if isinstance(self.env.action_space, (spaces.Discrete, spaces.MultiBinary)):
                 self.action_shape = (1,)
-                self.action_dim = self.env.unwrapped.action_space.n
+                self.action_dim = self.env.action_space.n
             else:
-                self.action_shape = self.env.unwrapped.action_space.shape
-                self.action_dim = self.env.unwrapped.action_space.shape[0]
+                self.action_shape = self.env.action_space.shape
+                self.action_dim = self.env.action_space.shape[0]
+
             self.reward_dim = self.env.unwrapped.reward_space.shape[0]
 
     @abstractmethod

@@ -1,4 +1,5 @@
 """EUPG is an ESR algorithm based on Policy Gradient (REINFORCE like)."""
+
 import time
 from copy import deepcopy
 from typing import Callable, List, Optional, Union
@@ -214,9 +215,7 @@ class EUPG(MOPolicy, MOAgent):
         else:
             obs = th.as_tensor(obs).to(self.device)
         accrued_reward = th.as_tensor(accrued_reward).float().to(self.device)
-        probas = self.net(obs, accrued_reward)
-        greedy_act = th.argmax(probas)
-        return greedy_act.detach().item()
+        return self.__choose_action(obs, accrued_reward)
 
     @th.no_grad()
     def __choose_action(self, obs: th.Tensor, accrued_reward: th.Tensor) -> int:
@@ -234,16 +233,18 @@ class EUPG(MOPolicy, MOAgent):
             next_obs,
             terminateds,
         ) = self.buffer.get_all_data(to_tensor=True, device=self.device)
-        # Scalarized episodic reward, our target :-)
+
         episodic_return = th.sum(rewards, dim=0)
         scalarized_return = self.scalarization(episodic_return.cpu().numpy(), self.weights)
         scalarized_return = th.scalar_tensor(scalarized_return).to(self.device)
 
+        discounted_forward_rewards = self._forward_cumulative_rewards(rewards)
+        scalarized_values = self.scalarization(discounted_forward_rewards)
         # For each sample in the batch, get the distribution over actions
         current_distribution = self.net.distribution(obs, accrued_rewards)
         # Policy gradient
-        log_probs = current_distribution.log_prob(actions)
-        loss = -th.mean(log_probs * scalarized_return)
+        log_probs = current_distribution.log_prob(actions.squeeze())
+        loss = -th.mean(log_probs * scalarized_values)
 
         self.optimizer.zero_grad()
         loss.backward()
@@ -259,7 +260,55 @@ class EUPG(MOPolicy, MOAgent):
                 },
             )
 
-    def train(self, total_timesteps: int, eval_env: Optional[gym.Env] = None, eval_freq: int = 1000, start_time=None):
+    def _forward_cumulative_rewards(self, rewards):
+        flip_rewards = rewards.flip(dims=[0])
+        cumulative_rewards = th.zeros(self.reward_dim).to(self.device)
+        for i in range(len(rewards)):
+            cumulative_rewards = self.gamma * cumulative_rewards + flip_rewards[i]
+            flip_rewards[i] = cumulative_rewards
+        forward_rewards = flip_rewards.flip(dims=[0])
+        return forward_rewards
+
+    @override
+    def get_save_dict(self, save_replay_buffer=True):
+        """Retrieve a dictionary containing all information needed to save the policy."""
+        save_dict = {
+            "policy_net_state_dict": self.net.state_dict(),
+            "optimizer_state_dict": self.optimizer.state_dict(),
+            "policy_weights": self.weights,
+        }
+
+        if save_replay_buffer:
+            save_dict["replay_buffer"] = self.get_buffer()
+
+        return save_dict
+
+    @override
+    def load(
+        self,
+        save_dict: Optional[dict] = None,
+        path: Optional[str] = None,
+        load_replay_buffer: bool = True,
+    ):
+        """Load the agent's weights and replay buffer."""
+        if save_dict is None:
+            assert path is not None, "Either save_dict or path must be provided."
+            save_dict = th.load(path, weights_only=False)
+
+        self.net.load_state_dict(save_dict["policy_net_state_dict"])
+        self.optimizer.load_state_dict(save_dict["optimizer_state_dict"])
+        self.weights = save_dict["policy_weights"]
+
+        if load_replay_buffer and "replay_buffer" in save_dict:
+            self.buffer = save_dict["replay_buffer"]
+
+    def train(
+        self,
+        total_timesteps: int,
+        eval_env: Optional[gym.Env] = None,
+        eval_freq: int = 1000,
+        start_time=None,
+    ):
         """Train the agent.
 
         Args:
@@ -281,17 +330,32 @@ class EUPG(MOPolicy, MOAgent):
         for _ in range(1, total_timesteps + 1):
             self.global_step += 1
 
+            if type(obs) is int:
+                obs = [obs]
+
             with th.no_grad():
                 # For training, takes action according to the policy
-                action = self.__choose_action(th.Tensor([obs]).to(self.device), accrued_reward_tensor)
+                action = self.__choose_action(th.Tensor(obs).to(self.device), accrued_reward_tensor)
             next_obs, vec_reward, terminated, truncated, info = self.env.step(action)
 
             # Memory update
-            self.buffer.add(obs, accrued_reward_tensor.cpu().numpy(), action, vec_reward, next_obs, terminated)
+            self.buffer.add(
+                obs,
+                accrued_reward_tensor.cpu().numpy(),
+                action,
+                vec_reward,
+                next_obs,
+                terminated,
+            )
             accrued_reward_tensor += th.from_numpy(vec_reward).to(self.device)
 
             if eval_env is not None and self.log and self.global_step % eval_freq == 0:
-                self.policy_eval_esr(eval_env, scalarization=self.scalarization, weights=self.weights, log=self.log)
+                self.policy_eval_esr(
+                    eval_env,
+                    scalarization=self.scalarization,
+                    weights=self.weights,
+                    log=self.log,
+                )
 
             if terminated or truncated:
                 # NN is updated at the end of each episode
@@ -315,7 +379,12 @@ class EUPG(MOPolicy, MOAgent):
 
             if self.log and self.global_step % 1000 == 0:
                 print("SPS:", int(self.global_step / (time.time() - start_time)))
-                wandb.log({"charts/SPS": int(self.global_step / (time.time() - start_time)), "global_step": self.global_step})
+                wandb.log(
+                    {
+                        "charts/SPS": int(self.global_step / (time.time() - start_time)),
+                        "global_step": self.global_step,
+                    }
+                )
 
     @override
     def get_config(self) -> dict:

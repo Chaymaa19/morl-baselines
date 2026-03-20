@@ -1,4 +1,5 @@
 """Pareto Q-Learning."""
+
 import numbers
 import os
 import json
@@ -76,21 +77,21 @@ class PQL(MOAgent):
         # Algorithm setup
         self.ref_point = ref_point
 
-        if type(self.env.action_space) == gym.spaces.Discrete:
+        if isinstance(self.env.action_space, gym.spaces.Discrete):
             self.num_actions = self.env.action_space.n
-        elif type(self.env.action_space) == gym.spaces.MultiDiscrete:
+        elif isinstance(self.env.action_space, gym.spaces.MultiDiscrete):
             self.num_actions = np.prod(self.env.action_space.nvec)
         else:
             raise Exception("PQL only supports (multi)discrete action spaces.")
 
-        if type(self.env.observation_space) == gym.spaces.Discrete:
+        if isinstance(self.env.observation_space, gym.spaces.Discrete):
             self.env_shape = (self.env.observation_space.n,)
-        elif type(self.env.observation_space) == gym.spaces.MultiDiscrete:
+        elif isinstance(self.env.observation_space, gym.spaces.MultiDiscrete):
             self.env_shape = self.env.observation_space.nvec
         elif (
-                type(self.env.observation_space) == gym.spaces.Box
-                and self.env.observation_space.is_bounded(manner="both")
-                and issubclass(self.env.observation_space.dtype.type, numbers.Integral)
+            isinstance(self.env.observation_space, gym.spaces.Box)
+            and self.env.observation_space.is_bounded(manner="both")
+            and issubclass(self.env.observation_space.dtype.type, numbers.Integral)
         ):
             low_bound = np.array(self.env.observation_space.low)
             high_bound = np.array(self.env.observation_space.high)

@@ -1,4 +1,5 @@
 """GPI-PD algorithm."""
+
 import os
 import random
 from itertools import chain
@@ -331,7 +332,7 @@ class GPIPD(MOPolicy, MOAgent):
 
     def load(self, path, load_replay_buffer=True):
         """Load the model parameters and the replay buffer."""
-        params = th.load(path, map_location=self.device)
+        params = th.load(path, map_location=self.device, weights_only=False)
         for i, (psi_net, target_psi_net) in enumerate(zip(self.q_nets, self.target_q_nets)):
             psi_net.load_state_dict(params[f"psi_net_{i}_state_dict"])
             target_psi_net.load_state_dict(params[f"psi_net_{i}_state_dict"])
@@ -347,15 +348,12 @@ class GPIPD(MOPolicy, MOAgent):
             return self.replay_buffer.sample(self.batch_size, to_tensor=True, device=self.device)
         else:
             num_real_samples = int(self.batch_size * self.real_ratio)  # real_ratio% of real world data
-            if self.per:
-                s_obs, s_actions, s_rewards, s_next_obs, s_dones, idxes = self.replay_buffer.sample(
-                    num_real_samples, to_tensor=True, device=self.device
-                )
-            else:
-                s_obs, s_actions, s_rewards, s_next_obs, s_dones = self.replay_buffer.sample(
-                    num_real_samples, to_tensor=True, device=self.device
-                )
-            m_obs, m_actions, m_rewards, m_next_obs, m_dones = self.dynamics_buffer.sample(
+
+            s_obs, s_actions, s_rewards, s_next_obs, s_dones, idxes = self.replay_buffer.sample(
+                num_real_samples, to_tensor=True, device=self.device
+            )
+
+            m_obs, m_actions, m_rewards, m_next_obs, m_dones, _ = self.dynamics_buffer.sample(
                 self.batch_size - num_real_samples, to_tensor=True, device=self.device
             )
             experience_tuples = (
@@ -993,4 +991,6 @@ class GPILS(GPIPD):
 
     def __init__(self, *args, **kwargs):
         """Initialize GPI-LS deactivating the dynamics model."""
-        super().__init__(dyna=False, gpi_pd=False, experiment_name="GPI-LS", *args, **kwargs)
+        if "experiment_name" not in kwargs:
+            kwargs["experiment_name"] = "GPI-LS"
+        super().__init__(dyna=False, gpi_pd=False, *args, **kwargs)

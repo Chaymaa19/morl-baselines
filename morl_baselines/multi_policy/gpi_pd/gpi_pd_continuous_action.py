@@ -1,4 +1,5 @@
 """GPI-PD algorithm with continuous actions."""
+
 import os
 import random
 from itertools import chain
@@ -95,7 +96,7 @@ class GPIPDContinuousAction(MOAgent, MOPolicy):
         delay_policy_update: int = 2,
         learning_starts: int = 100,
         gradient_updates: int = 20,
-        use_gpi: bool = True,
+        use_gpi: bool = False,  # In the continuous action case, GPI is only used to selected weights.
         policy_noise: float = 0.2,
         noise_clip: float = 0.5,
         per: bool = True,
@@ -295,7 +296,7 @@ class GPIPDContinuousAction(MOAgent, MOPolicy):
 
     def load(self, path, load_replay_buffer=True):
         """Load the agent weights from a file."""
-        params = th.load(path, map_location=self.device)
+        params = th.load(path, map_location=self.device, weights_only=False)
         self.weight_support = params["M"]
         self.stacked_weight_support = th.stack(self.weight_support)
         self.policy.load_state_dict(params["policy_state_dict"])
@@ -314,15 +315,11 @@ class GPIPDContinuousAction(MOAgent, MOPolicy):
             return self.replay_buffer.sample(self.batch_size, to_tensor=True, device=self.device)
         else:
             num_real_samples = int(self.batch_size * self.dynamics_real_ratio)  # % of real world data
-            if self.per:
-                s_obs, s_actions, s_rewards, s_next_obs, s_dones, idxes = self.replay_buffer.sample(
-                    num_real_samples, to_tensor=True, device=self.device
-                )
-            else:
-                (s_obs, s_actions, s_rewards, s_next_obs, s_dones) = self.replay_buffer.sample(
-                    num_real_samples, to_tensor=True, device=self.device
-                )
-            (m_obs, m_actions, m_rewards, m_next_obs, m_dones) = self.dynamics_buffer.sample(
+            s_obs, s_actions, s_rewards, s_next_obs, s_dones, idxes = self.replay_buffer.sample(
+                num_real_samples, to_tensor=True, device=self.device
+            )
+
+            (m_obs, m_actions, m_rewards, m_next_obs, m_dones, _) = self.dynamics_buffer.sample(
                 self.batch_size - num_real_samples, to_tensor=True, device=self.device
             )
             experience_tuples = (
@@ -574,7 +571,7 @@ class GPIPDContinuousAction(MOAgent, MOPolicy):
                     plot.close()
 
             if terminated or truncated:
-                obs, info = self.env.reset()
+                obs, _ = self.env.reset()
                 self.num_episodes += 1
 
                 if self.log and "episode" in info.keys():
@@ -711,4 +708,6 @@ class GPILSContinuousAction(GPIPDContinuousAction):
 
     def __init__(self, *args, **kwargs):
         """Initialize the agent deactivating the dynamics model."""
-        super().__init__(dyna=False, experiment_name="GPI-LS Continuous Action", *args, **kwargs)
+        if "experiment_name" not in kwargs:
+            kwargs["experiment_name"] = "GPI-LS Continuous Action"
+        super().__init__(dyna=False, *args, **kwargs)

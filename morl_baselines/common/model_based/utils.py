@@ -1,4 +1,5 @@
 """Utility functions for the model."""
+
 from typing import Tuple
 
 import matplotlib.pyplot as plt
@@ -9,19 +10,19 @@ import torch.nn.functional as F
 from gymnasium.spaces import Discrete
 
 
-def termination_fn_false(obs, act, next_obs):
+def termination_fn_false(obs, act, next_obs, rew):
     """Returns a vector of False values of the same length as the batch size."""
-    assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
+    assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == len(rew.shape) == 2
     done = np.array([False]).repeat(len(obs))
     done = done[:, np.newaxis]
     return done
 
 
-def termination_fn_dst(obs, act, next_obs):
+def termination_fn_dst(obs, act, next_obs, rew):
     """Termination function of DST."""
     from mo_gymnasium.deep_sea_treasure.deep_sea_treasure import CONCAVE_MAP
 
-    assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
+    assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == len(rew.shape) == 2
     done = np.array([False]).repeat(len(obs))
     next_obs_int = (next_obs * 10).astype(int)
     for i in range(len(done)):
@@ -33,9 +34,9 @@ def termination_fn_dst(obs, act, next_obs):
     return done
 
 
-def termination_fn_mountaincar(obs, act, next_obs):
-    """Termination function of mountin car."""
-    assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
+def termination_fn_mountaincar(obs, act, next_obs, rew):
+    """Termination function of mountain car."""
+    assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == len(rew.shape) == 2
     position = next_obs[:, 0]
     velocity = next_obs[:, 1]
     done = (position >= 0.45) * (velocity >= 0.0)
@@ -43,9 +44,9 @@ def termination_fn_mountaincar(obs, act, next_obs):
     return done
 
 
-def termination_fn_minecart(obs, act, next_obs):
+def termination_fn_minecart(obs, act, next_obs, rew):
     """Termination function of minecart."""
-    assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
+    assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == len(rew.shape) == 2
     old_pos = obs[:, 0:2]
     pos = next_obs[:, 0:2]
     # had_ore = (obs[:,-2] > 0) + (obs[:,-1] > 0)
@@ -56,7 +57,7 @@ def termination_fn_minecart(obs, act, next_obs):
     return done
 
 
-def termination_fn_hopper(obs, act, next_obs):
+def termination_fn_hopper(obs, act, next_obs, rew):
     """Termination function of hopper."""
     assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == 2
     height = next_obs[:, 0]
@@ -67,6 +68,35 @@ def termination_fn_hopper(obs, act, next_obs):
         * (height > 0.7)
         * (np.abs(angle) < 0.2)
     )
+    done = ~not_done
+    done = done[:, np.newaxis]
+    return done
+
+
+def termination_fn_lunarlander(obs, act, next_obs, rew):
+    """Termination function of lunarlander. Use reward prediction to determine termination."""
+    assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == len(rew.shape) == 2
+
+    # Condition 1: out of screen
+    has_exited_screen = abs(next_obs[:, 0]) >= 1.0
+
+    # Condition 2: all legs have landed (supposed to be 1.0 but we allow for some margin of error) and reward is non-zero
+    has_crashed_or_landed = (rew[:, 0] != 0) & (next_obs[:, 6] >= 0.95) & (next_obs[:, 7] >= 0.95)
+
+    not_done = ~(has_exited_screen | has_crashed_or_landed)
+    done = ~not_done
+    done = done[:, np.newaxis]
+    return done
+
+
+def termination_fn_humanoid(obs, act, next_obs, rew):
+    """Termination function of hopper."""
+    assert len(obs.shape) == len(next_obs.shape) == len(act.shape) == len(rew.shape) == 2
+    min_z, max_z = 1.0, 2.0  # if u change healthy_z_range in the humanoid env, change this too
+
+    # index needs to be +2 if you unset the exclude_current_positions_from_observation
+    # parameter in the humanoid env
+    not_done = (min_z < next_obs[:, 0]) & (next_obs[:, 0] < max_z)
     done = ~not_done
     done = done[:, np.newaxis]
     return done
@@ -85,20 +115,20 @@ class ModelEnv:
         """
         self.model = model
         self.rew_dim = rew_dim
-        if env_id == "Hopper-v2" or env_id == "Hopper-v4" or env_id == "mo-hopper-v4" or env_id == "mo-hopper-2d-v4":
+        if "hopper" in env_id:
             self.termination_func = termination_fn_hopper
-        elif env_id == "HalfCheetah-v2" or env_id == "mo-halfcheetah-v4":
+        elif "halfcheetah" in env_id:
             self.termination_func = termination_fn_false
-        elif env_id == "LunarLanderContinuous-v2" or env_id.startswith("mo-lunar-lander"):
+        elif "humanoid" in env_id:
+            self.termination_func = termination_fn_humanoid
+        elif "lunar-lander" in env_id:
+            self.termination_func = termination_fn_lunarlander
+        elif "mo-reacher" in env_id:
             self.termination_func = termination_fn_false
-        elif env_id == "ReacherMultiTask-v0" or env_id.startswith("mo-reacher-v"):
-            self.termination_func = termination_fn_false
-        elif env_id == "MountainCarContinuous-v0" or env_id.startswith("mo-mountaincar"):
+        elif "mountaincar" in env_id:
             self.termination_func = termination_fn_mountaincar
-        elif env_id == "minecart-v0":
+        elif "minecart" in env_id:
             self.termination_func = termination_fn_minecart
-        elif env_id == "SEIRsingle-v0":
-            self.termination_func = termination_fn_false
         elif env_id == "mo-highway-fast-v0" or env_id == "mo-highway-v0":
             self.termination_func = termination_fn_false
         elif env_id == "deep-sea-treasure-v0":
@@ -136,7 +166,7 @@ class ModelEnv:
         samples[:, self.rew_dim :] += obs
 
         rewards, next_obs = samples[:, : self.rew_dim], samples[:, self.rew_dim :]
-        terminals = self.termination_func(obs, act, next_obs)
+        terminals = self.termination_func(obs, act, next_obs, rewards)
         var_rewards, var_obs = vars[:, : self.rew_dim], vars[:, self.rew_dim :]
 
         if return_single:
@@ -147,16 +177,29 @@ class ModelEnv:
             var_obs = var_obs[0]
             var_rewards = var_rewards[0]
 
-        info = {"uncertainty": uncertainties, "var_obs": var_obs, "var_rewards": var_rewards}
+        info = {
+            "uncertainty": uncertainties,
+            "var_obs": var_obs,
+            "var_rewards": var_rewards,
+        }
 
         # info = {'mean': return_means, 'std': return_stds, 'log_prob': log_prob, 'dev': dev}
         return next_obs, rewards, terminals, info
 
 
 def visualize_eval(
-    agent, env, model=None, w=None, horizon=10, init_obs=None, compound=True, deterministic=False, show=False, filename=None
+    agent,
+    env,
+    model=None,
+    w=None,
+    horizon=10,
+    init_obs=None,
+    compound=True,
+    deterministic=False,
+    show=False,
+    filename=None,
 ):
-    """Generates a plot of the evolution of the state, reward and model predicitions ove time.
+    """Generates a plot of the evolution of the state, reward and model predictions over time.
 
     Args:
         agent: agent to be evaluated
@@ -213,10 +256,16 @@ def visualize_eval(
             acts = F.one_hot(acts, num_classes=env.action_space.n).squeeze(1)
         for step in range(len(real_obs)):
             if compound or step == 0:
-                obs, r, done, info = model_env.step(th.tensor(obs).to(agent.device), acts[step], deterministic=deterministic)
+                obs, r, done, info = model_env.step(
+                    th.tensor(obs).to(agent.device),
+                    acts[step],
+                    deterministic=deterministic,
+                )
             else:
                 obs, r, done, info = model_env.step(
-                    th.tensor(real_obs[step - 1]).to(agent.device), acts[step], deterministic=deterministic
+                    th.tensor(real_obs[step - 1]).to(agent.device),
+                    acts[step],
+                    deterministic=deterministic,
                 )
             model_obs.append(obs.copy())
             model_obs_stds.append(np.sqrt(info["var_obs"].copy()))
@@ -240,11 +289,26 @@ def visualize_eval(
             axs[i].set_ylabel(f"Reward {i - obs_dim}")
             axs[i].grid(alpha=0.25)
             if w is not None:
-                axs[i].plot(x, [real_vec_rewards[step][i - obs_dim] for step in x], label="Environment", color="black")
+                axs[i].plot(
+                    x,
+                    [real_vec_rewards[step][i - obs_dim] for step in x],
+                    label="Environment",
+                    color="black",
+                )
             else:
-                axs[i].plot(x, [real_rewards[step] for step in x], label="Environment", color="black")
+                axs[i].plot(
+                    x,
+                    [real_rewards[step] for step in x],
+                    label="Environment",
+                    color="black",
+                )
             if model is not None:
-                axs[i].plot(x, [model_rewards[step][i - obs_dim] for step in x], label="Model", color="blue")
+                axs[i].plot(
+                    x,
+                    [model_rewards[step][i - obs_dim] for step in x],
+                    label="Model",
+                    color="blue",
+                )
                 axs[i].fill_between(
                     x,
                     [model_rewards[step][i - obs_dim] + model_rewards_stds[step][i - obs_dim] for step in x],

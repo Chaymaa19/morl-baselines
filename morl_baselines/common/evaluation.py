@@ -1,4 +1,5 @@
 """Utilities related to evaluation."""
+
 import os
 import random
 from typing import List, Optional, Tuple
@@ -15,7 +16,6 @@ from morl_baselines.common.performance_indicators import (
     hypervolume,
     igd,
     maximum_utility_loss,
-    sparsity,
 )
 from morl_baselines.common.weights import equally_spaced_weights
 from morl_baselines.common.logger import Logger
@@ -77,11 +77,12 @@ def eval_mo(
 
 
 def eval_mo_reward_conditioned(
-        agent,
-        env,
-        scalarization=np.dot,
-        w: Optional[np.ndarray] = None,
-        render: bool = False,
+    agent,
+    env,
+    scalarization=np.dot,
+    w: Optional[np.ndarray] = None,
+    render: bool = False,
+    **kwargs,
 ) -> Tuple[float, float, np.ndarray, np.ndarray]:
     """Evaluates one episode of the agent in the environment. This makes the assumption that the agent is conditioned on the accrued reward i.e. for ESR agent.
 
@@ -103,7 +104,7 @@ def eval_mo_reward_conditioned(
     while not done:
         if render:
             env.render()
-        obs, r, terminated, truncated, info = env.step(agent.eval(obs, disc_vec_return))
+        obs, r, terminated, truncated, info = env.step(agent.eval(obs, disc_vec_return, **kwargs))
         done = terminated or truncated
         vec_return += r
         disc_vec_return += gamma * r
@@ -167,7 +168,6 @@ def log_all_multi_policy_metrics(
 
     Logged metrics:
     - hypervolume
-    - sparsity
     - expected utility metric (EUM)
     If a reference front is provided, also logs:
     - Inverted generational distance (IGD)
@@ -184,7 +184,6 @@ def log_all_multi_policy_metrics(
     """
     filtered_front = list(filter_pareto_dominated(current_front))
     hv = hypervolume(hv_ref_point, filtered_front)
-    sp = sparsity(filtered_front)
     eum = expected_utility(filtered_front, weights_set=equally_spaced_weights(reward_dim, n_sample_weights))
     card = cardinality(filtered_front)
 
@@ -192,7 +191,6 @@ def log_all_multi_policy_metrics(
         wandb.log(
             {
                 "eval/hypervolume": hv,
-                "eval/sparsity": sp,
                 "eval/eum": eum,
                 "eval/cardinality": card,
                 "global_step": global_step,

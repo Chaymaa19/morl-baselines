@@ -1,9 +1,9 @@
 """Linear Support implementation."""
+
 import random
 from copy import deepcopy
 from typing import List, Optional
 
-import cdd
 import cvxpy as cp
 import numpy as np
 from cvxpy import SolverError
@@ -13,6 +13,14 @@ from morl_baselines.common.evaluation import policy_evaluation_mo
 from morl_baselines.common.morl_algorithm import MOPolicy
 from morl_baselines.common.performance_indicators import hypervolume
 from morl_baselines.common.weights import extrema_weights
+
+
+try:
+    import cdd
+except ImportError as e:
+    raise ImportError(
+        "To use this feature, you need to install the optional dependency pycddlib==2.1.6 as stated in pyproject.toml of morl-baselines"
+    ) from e
 
 
 np.set_printoptions(precision=4)
@@ -93,7 +101,7 @@ class LinearSupport:
             if len(self.queue) > 0:
                 # Sort in descending order of priority
                 self.queue.sort(key=lambda t: t[0], reverse=True)
-                # If all priorities are 0, shuffle the queue to avoid repearting weights every iteration
+                # If all priorities are 0, shuffle the queue to avoid repeating weights every iteration
                 if self.queue[0][0] == 0.0:
                     random.shuffle(self.queue)
 
@@ -156,7 +164,7 @@ class LinearSupport:
             List of indices of value vectors removed from the CCS for being dominated.
         """
         if self.verbose:
-            print(f"Adding value: {value} to CCS.")
+            print(f"Adding value={value} for weight={w} to CCS.")
 
         self.iteration += 1
         self.visited_weights.append(w)
@@ -223,27 +231,6 @@ class LinearSupport:
         if len(self.ccs) == 0:
             return None
         return np.max([np.dot(v, w) for v in self.ccs])
-
-    def remove_obsolete_weights(self, new_value: np.ndarray) -> List[np.ndarray]:
-        """Remove from the queue the weight vectors for which the new value vector is better than previous values.
-
-        Args:
-            new_value: New value vector
-
-        Returns:
-            List of weight vectors removed from the queue.
-        """
-        if len(self.ccs) == 0:
-            return []
-        W_del = []
-        inds_remove = []
-        for i, (priority, cw) in enumerate(self.queue):
-            if np.dot(cw, new_value) > self.max_scalarized_value(cw):
-                W_del.append(cw)
-                inds_remove.append(i)
-        for i in reversed(inds_remove):
-            self.queue.pop(i)
-        return W_del
 
     def remove_obsolete_values(self, value: np.ndarray) -> List[int]:
         """Removes the values vectors which are no longer optimal for any weight vector after adding the new value vector.
@@ -315,7 +302,7 @@ class LinearSupport:
             List of corner weights.
         """
         A = np.vstack(self.ccs)
-        A = np.round_(A, decimals=4)  # Round to avoid numerical issues
+        A = np.round(A, decimals=4)  # Round to avoid numerical issues
         A = np.concatenate((A, -np.ones(A.shape[0]).reshape(-1, 1)), axis=1)
 
         A_plus = np.ones(A.shape[1]).reshape(1, -1)

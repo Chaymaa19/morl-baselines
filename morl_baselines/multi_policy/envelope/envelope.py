@@ -216,7 +216,7 @@ class Envelope(MOPolicy, MOAgent):
                 num_actions=self.action_dim,
                 rew_dim=self.reward_dim,
                 max_size=buffer_size,
-                action_dtype=np.uint8
+                action_dtype=np.uint16
             )
         else:
             raise ValueError("Unsupported feat: Action masking not included for Replay Buffer")

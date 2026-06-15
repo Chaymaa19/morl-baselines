@@ -438,6 +438,13 @@ class VecEnvelope(MOPolicy, MOAgent):
                 self.logger.record(key="metrics/homotopy_lambda", value=self.homotopy_lambda)
                 self.logger.record(key="global_step", value=self.global_step)
 
+                # --- NEW DIAGNOSTIC METRICS ---
+                self.logger.record(key="debug/reward_max", value=b_rewards.max().item())
+                self.logger.record(key="debug/reward_min", value=b_rewards.min().item())
+                self.logger.record(key="debug/q_value_max", value=q_value.max().item())
+                self.logger.record(key="debug/q_value_mean", value=q_value.mean().item())
+                # ------------------------------
+
                 if self.per:
                     self.logger.record(key="metrics/mean_priority", value=np.mean(priority))
 

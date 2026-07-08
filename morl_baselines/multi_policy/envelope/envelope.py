@@ -133,6 +133,8 @@ class Envelope(MOPolicy, MOAgent):
             group: Optional[str] = None,
             logger: Optional[Logger] = None,
             reward_transforms: Optional[List[Callable[[th.Tensor, th.Tensor], th.Tensor]]] = None,
+            checkpoint_freq: Optional[int] = None,
+            checkpoint_dir: str = "weights/",
     ):
         """Envelope Q-learning algorithm.
 
@@ -165,6 +167,8 @@ class Envelope(MOPolicy, MOAgent):
             seed: The seed for the random number generator.
             device: The device to use for training.
             group: The wandb group to use for logging.
+            checkpoint_freq: Number of timesteps between checkpoints. If None, no checkpoints are saved during training.
+            checkpoint_dir: Directory where checkpoints are saved during training.
         """
         MOAgent.__init__(self, env, device=device, seed=seed)
         MOPolicy.__init__(self, device)
@@ -187,6 +191,8 @@ class Envelope(MOPolicy, MOAgent):
         self.initial_homotopy_lambda = initial_homotopy_lambda
         self.final_homotopy_lambda = final_homotopy_lambda
         self.homotopy_decay_steps = homotopy_decay_steps
+        self.checkpoint_freq = checkpoint_freq
+        self.checkpoint_dir = checkpoint_dir
 
         self.q_net = QNet(self.observation_shape, self.action_dim, self.reward_dim, net_arch=net_arch).to(self.device)
         self.target_q_net = QNet(self.observation_shape, self.action_dim, self.reward_dim, net_arch=net_arch).to(
@@ -260,10 +266,57 @@ class Envelope(MOPolicy, MOAgent):
             "homotopy_decay_steps": self.homotopy_decay_steps,
             "learning_starts": self.learning_starts,
             "seed": self.seed,
+            "checkpoint_freq": self.checkpoint_freq,
+            "checkpoint_dir": self.checkpoint_dir,
         }
 
+    def _get_checkpoint_dict(self, save_replay_buffer: bool = True) -> dict:
+        """Build a checkpoint dictionary with all state needed for crash recovery."""
+        saved_params = {
+            "q_net_state_dict": self.q_net.state_dict(),
+            "target_q_net_state_dict": self.target_q_net.state_dict(),
+            "q_net_optimizer_state_dict": self.q_optim.state_dict(),
+            "training_state": {
+                "global_step": self.global_step,
+                "num_episodes": self.num_episodes,
+                "epsilon": self.epsilon,
+                "homotopy_lambda": self.homotopy_lambda,
+                "learning_starts": self.learning_starts,
+                "np_random_state": self.np_random.bit_generator.state,
+            },
+        }
+        if save_replay_buffer:
+            saved_params["replay_buffer"] = self.replay_buffer
+        return saved_params
+
+    def _load_checkpoint_dict(
+            self,
+            params: dict,
+            load_replay_buffer: bool = True,
+            load_training_state: bool = True,
+    ):
+        """Restore model and training state from a checkpoint dictionary."""
+        self.q_net.load_state_dict(params["q_net_state_dict"])
+        if "target_q_net_state_dict" in params:
+            self.target_q_net.load_state_dict(params["target_q_net_state_dict"])
+        else:
+            self.target_q_net.load_state_dict(params["q_net_state_dict"])
+        self.q_optim.load_state_dict(params["q_net_optimizer_state_dict"])
+        if load_replay_buffer and "replay_buffer" in params:
+            self.replay_buffer = params["replay_buffer"]
+        if load_training_state and "training_state" in params:
+            training_state = params["training_state"]
+            self.global_step = training_state["global_step"]
+            self.num_episodes = training_state["num_episodes"]
+            self.epsilon = training_state["epsilon"]
+            self.homotopy_lambda = training_state["homotopy_lambda"]
+            if "learning_starts" in training_state:
+                self.learning_starts = training_state["learning_starts"]
+            if "np_random_state" in training_state:
+                self.np_random.bit_generator.state = training_state["np_random_state"]
+
     def save(self, save_replay_buffer: bool = True, save_dir: str = "weights/", filename: Optional[str] = None):
-        """Save the model and the replay buffer if specified.
+        """Save the model and training state for crash recovery.
 
         Args:
             save_replay_buffer: Whether to save the replay buffer too.
@@ -272,31 +325,33 @@ class Envelope(MOPolicy, MOAgent):
         """
         if not os.path.isdir(save_dir):
             os.makedirs(save_dir)
-        saved_params = {}
-        saved_params["q_net_state_dict"] = self.q_net.state_dict()
-
-        saved_params["q_net_optimizer_state_dict"] = self.q_optim.state_dict()
-        if save_replay_buffer:
-            saved_params["replay_buffer"] = self.replay_buffer
         filename = self.experiment_name if filename is None else filename
-        th.save(saved_params, save_dir + "/" + filename + ".tar")
+        th.save(self._get_checkpoint_dict(save_replay_buffer), save_dir + "/" + filename + ".tar")
 
-    def load(self, path: str, load_replay_buffer: bool = True, use_cpu: bool = False):
-        """Load the model and the replay buffer if specified.
+    def load(
+            self,
+            path: str,
+            load_replay_buffer: bool = True,
+            load_training_state: bool = True,
+            use_cpu: bool = False,
+    ):
+        """Load the model and training state for crash recovery.
 
         Args:
             path: Path to the model.
             load_replay_buffer: Whether to load the replay buffer too.
+            load_training_state: Whether to restore counters, schedules, and RNG state.
+            use_cpu: Whether to load tensors on CPU first.
         """
         if use_cpu:
             params = th.load(path, map_location=th.device('cpu'), weights_only=False)
         else:
-            params = th.load(path)
-        self.q_net.load_state_dict(params["q_net_state_dict"])
-        self.target_q_net.load_state_dict(params["q_net_state_dict"])
-        self.q_optim.load_state_dict(params["q_net_optimizer_state_dict"])
-        if load_replay_buffer and "replay_buffer" in params:
-            self.replay_buffer = params["replay_buffer"]
+            params = th.load(path, weights_only=False)
+        self._load_checkpoint_dict(
+            params,
+            load_replay_buffer=load_replay_buffer,
+            load_training_state=load_training_state,
+        )
 
     def __sample_batch_experiences(self):
         return self.replay_buffer.sample(self.batch_size, to_tensor=True, device=self.device)
@@ -702,6 +757,12 @@ class Envelope(MOPolicy, MOAgent):
                     self.logger.record(key="eval/num_pf_solutions", value=len(current_front))
                     self.logger.record(key="eval/mean_scalarized_return", value=np.mean(scalarized_returns))
                     self.logger.dump(step=self.global_step)
+
+            if self.checkpoint_freq is not None and self.global_step % self.checkpoint_freq == 0:
+                self.save(
+                    filename=f"{self.experiment_name} step={self.global_step}",
+                    save_dir=self.checkpoint_dir,
+                )
 
             if self.log and self.global_step % log_progress_every == 0:
                 begin_time = time.time()

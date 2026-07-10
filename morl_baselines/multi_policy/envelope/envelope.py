@@ -238,6 +238,8 @@ class Envelope(MOPolicy, MOAgent):
         self.logger = logger
         if log and not self.logger:
             self.setup_wandb(project_name, experiment_name, wandb_entity, group)
+        else:
+            self.experiment_name = experiment_name
 
         # Reward transform: function to modify the reward according to the received weights
         # Used in NXG to implement a PP size penalization relative to the number of nexus indicators considered

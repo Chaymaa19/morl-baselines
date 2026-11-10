@@ -2,6 +2,8 @@
 
 Code adapted from https://github.com/sfujim/LAP-PAL
 """
+from typing import Dict, Optional
+
 import numpy as np
 import torch as th
 
@@ -92,6 +94,7 @@ class PrioritizedMaskedReplayBuffer:
         obs_dtype=np.float32,
         action_dtype=np.float32,
         min_priority=1e-5,
+        extra_fields: Optional[Dict[str, int]] = None,
     ):
         """Initialize the Prioritized Replay Buffer.
 
@@ -104,6 +107,8 @@ class PrioritizedMaskedReplayBuffer:
             obs_dtype: Data type of the observations
             action_dtype: Data type of the actions
             min_priority: Minimum priority of the buffer
+            extra_fields: Optional mapping of extra field name to trailing dimension size
+                (stored as float32 vectors per transition).
         """
         self.max_size = max_size
         (
@@ -123,10 +128,27 @@ class PrioritizedMaskedReplayBuffer:
         self.rewards = np.zeros((max_size, rew_dim), dtype=np.float32)
         self.dones = np.zeros((max_size, 1), dtype=np.float32)
 
+        self.extra_fields = dict(extra_fields) if extra_fields else {}
+        self.extras = {
+            name: np.zeros((max_size, dim), dtype=np.float32)
+            for name, dim in self.extra_fields.items()
+        }
+
         self.tree = SumTree(max_size)
         self.min_priority = min_priority
 
-    def add(self, obs, obs_action_mask, action, reward, next_obs, next_obs_action_mask, done, priority=None):
+    def add(
+        self,
+        obs,
+        obs_action_mask,
+        action,
+        reward,
+        next_obs,
+        next_obs_action_mask,
+        done,
+        priority=None,
+        transition_extras: Optional[Dict[str, np.ndarray]] = None,
+    ):
         """Add a new experience to the buffer.
 
         Args:
@@ -138,6 +160,7 @@ class PrioritizedMaskedReplayBuffer:
             next_obs_action_mask: Action mask in the next observation
             done: Done
             priority: Priority of the new experience
+            transition_extras: Optional extra metadata (keys must match ``extra_fields``).
 
         """
         self.obs[self.ptr] = np.array(obs).copy()
@@ -148,6 +171,12 @@ class PrioritizedMaskedReplayBuffer:
         self.actions[self.ptr] = np.array(action).copy()
         self.rewards[self.ptr] = np.array(reward).copy()
         self.dones[self.ptr] = np.array(done).copy()
+
+        for name, dim in self.extra_fields.items():
+            if transition_extras is not None and name in transition_extras:
+                self.extras[name][self.ptr] = np.array(transition_extras[name], dtype=np.float32).copy()
+            else:
+                self.extras[name][self.ptr] = 0.0
 
         self.tree.set(
             self.ptr, self.min_priority if priority is None else priority)
@@ -164,7 +193,8 @@ class PrioritizedMaskedReplayBuffer:
             device: Device to move the tensor to
 
         Returns:
-            batch: Batch of experiences
+            batch: Batch of experiences. When ``extra_fields`` are configured, a dict of
+            extra arrays is appended before the sample indices.
         """
         idxes = self.tree.sample(batch_size)
 
@@ -177,6 +207,12 @@ class PrioritizedMaskedReplayBuffer:
             self.next_obs_action_masks[idxes],
             self.dones[idxes],
         )
+        if self.extra_fields:
+            extras = {name: self.extras[name][idxes] for name in self.extra_fields}
+            if to_tensor:
+                extras = {name: th.tensor(arr).to(device) for name, arr in extras.items()}
+                return tuple(map(lambda x: th.tensor(x).to(device), experience_tuples)) + (extras,) + (idxes,)
+            return experience_tuples + (extras,) + (idxes,)
         if to_tensor:
             # , weights)
             return tuple(map(lambda x: th.tensor(x).to(device), experience_tuples)) + (idxes,)
@@ -234,6 +270,12 @@ class PrioritizedMaskedReplayBuffer:
             self.next_obs_action_masks[inds],
             self.dones[inds],
         )
+        if self.extra_fields:
+            extras = {name: self.extras[name][inds] for name in self.extra_fields}
+            if to_tensor:
+                extras = {name: th.tensor(arr).to(device) for name, arr in extras.items()}
+                return tuple(map(lambda x: th.tensor(x).to(device), tuples)) + (extras,)
+            return tuples + (extras,)
         if to_tensor:
             return tuple(map(lambda x: th.tensor(x).to(device), tuples))
         else:

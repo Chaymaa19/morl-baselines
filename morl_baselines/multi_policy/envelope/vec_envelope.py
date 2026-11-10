@@ -29,6 +29,10 @@ from morl_baselines.common.networks import (
 )
 from morl_baselines.common.prioritized_buffer import PrioritizedReplayBuffer
 from morl_baselines.common.prioritized_masked_buffer import PrioritizedMaskedReplayBuffer
+from morl_baselines.common.transition_metadata import (
+    TransitionMetadataCollector,
+    apply_reward_transforms,
+)
 from morl_baselines.common.utils import linearly_decaying_value
 from morl_baselines.common.weights import equally_spaced_weights, random_weights
 from morl_baselines.common.logger import Logger
@@ -132,7 +136,9 @@ class VecEnvelope(MOPolicy, MOAgent):
             device: Union[th.device, str] = "auto",
             group: Optional[str] = None,
             logger: Optional[Logger] = None,
-            reward_transforms: Optional[List[Callable[[th.Tensor, th.Tensor], th.Tensor]]] = None,
+            reward_transforms: Optional[List[Callable[..., th.Tensor]]] = None,
+            transition_extra_fields: Optional[Dict[str, int]] = None,
+            transition_metadata_collector: Optional[TransitionMetadataCollector] = None,
             checkpoint_freq: Optional[int] = None,
             checkpoint_dir: str = "weights/",
     ):
@@ -169,6 +175,9 @@ class VecEnvelope(MOPolicy, MOAgent):
             group: The wandb group to use for logging.
             checkpoint_freq: Number of timesteps between checkpoints. If None, no checkpoints are saved during training.
             checkpoint_dir: Directory where checkpoints are saved during training.
+            reward_transforms: Optional callables ``(rewards, weights, **kwargs) -> rewards``.
+            transition_extra_fields: Optional extra per-transition vectors stored in the replay buffer.
+            transition_metadata_collector: Optional collector invoked each env step before ``add``.
         """
 
         assert target_net_update_freq % env.num_envs == 0, "target_net_update_freq must be a multiple of the number of environments."
@@ -227,7 +236,8 @@ class VecEnvelope(MOPolicy, MOAgent):
                 num_actions=self.action_dim,
                 rew_dim=self.reward_dim,
                 max_size=buffer_size,
-                action_dtype=np.uint16
+                action_dtype=np.uint16,
+                extra_fields=transition_extra_fields,
             )
         else:
             raise ValueError("Unsupported feat: Action masking not included for Replay Buffer")
@@ -246,9 +256,13 @@ class VecEnvelope(MOPolicy, MOAgent):
         else:
             self.experiment_name = experiment_name
 
-        # Reward transform: function to modify the reward according to the received weights
-        # Used in NXG to implement a PP size penalization relative to the number of nexus indicators considered
         self.reward_transforms = reward_transforms
+        self.transition_extra_fields = transition_extra_fields or {}
+        self.transition_metadata_collector = transition_metadata_collector
+        if self.transition_metadata_collector is not None and not self.transition_extra_fields:
+            raise ValueError(
+                "transition_extra_fields must be set when using transition_metadata_collector."
+            )
 
     @override
     def get_config(self):
@@ -363,6 +377,20 @@ class VecEnvelope(MOPolicy, MOAgent):
     def __sample_batch_experiences(self):
         return self.replay_buffer.sample(self.batch_size, to_tensor=True, device=self.device)
 
+    def __unpack_batch_sample(self, batch):
+        if self.transition_extra_fields:
+            return batch[:-2], batch[-2], batch[-1]
+        return batch[:-1], None, batch[-1]
+
+    def __repeat_transition_extras(self, extras: Dict[str, th.Tensor]) -> Dict[str, th.Tensor]:
+        repeated = {}
+        for name, values in extras.items():
+            if values.dim() == 1:
+                repeated[name] = values.repeat(self.num_sample_w)
+            else:
+                repeated[name] = values.repeat(self.num_sample_w, *((1,) * (values.dim() - 1)))
+        return repeated
+
     @override
     def update(self, random_sampling_dist: str, random_dist_config: dict = None):
         """
@@ -374,6 +402,7 @@ class VecEnvelope(MOPolicy, MOAgent):
         critic_losses = []
         for g in range(self.gradient_updates):
             # if self.per:
+            batch = self.__sample_batch_experiences()
             (
                 b_obs,
                 b_obs_action_masks,
@@ -382,8 +411,7 @@ class VecEnvelope(MOPolicy, MOAgent):
                 b_next_obs,
                 b_next_obs_action_masks,
                 b_dones,
-                b_inds,
-            ) = self.__sample_batch_experiences()
+            ), b_transition_extras, b_inds = self.__unpack_batch_sample(batch)
             # else:
             #     (
             #         b_obs,
@@ -409,10 +437,16 @@ class VecEnvelope(MOPolicy, MOAgent):
                 b_next_obs_action_masks.repeat(self.num_sample_w, 1),
                 b_dones.repeat(self.num_sample_w, 1),
             )
-            # Apply reward transformations wrt weights if needed
+            transform_kwargs = {"dones": b_dones}
+            if b_transition_extras is not None:
+                transform_kwargs.update(self.__repeat_transition_extras(b_transition_extras))
             if self.reward_transforms:
-                for transform in self.reward_transforms:
-                    b_rewards = transform(rewards=b_rewards, weights=w)
+                b_rewards = apply_reward_transforms(
+                    self.reward_transforms,
+                    b_rewards,
+                    w,
+                    **transform_kwargs,
+                )
 
             with th.no_grad():
                 if self.envelope:
@@ -762,17 +796,24 @@ class VecEnvelope(MOPolicy, MOAgent):
 
             episode_steps += 1
 
-            for obs, obs_action_mask, action, vec_reward, next_obs, next_obs_action_mask, terminated, truncated, info \
-                    in zip(vec_obs, obs_action_masks, actions, vec_vec_reward, next_vec_obs, next_obs_action_masks,
-                           vec_terminated, vec_truncated, infos):
+            for env_id, (obs, obs_action_mask, action, vec_reward, next_obs, next_obs_action_mask, terminated, truncated, info) \
+                    in enumerate(zip(vec_obs, obs_action_masks, actions, vec_vec_reward, next_vec_obs, next_obs_action_masks,
+                           vec_terminated, vec_truncated, infos)):
+                done_flag = terminated or truncated
+                transition_extras = None
+                if self.transition_metadata_collector is not None:
+                    transition_extras = self.transition_metadata_collector.step(
+                        np.asarray(vec_reward, dtype=np.float32), done_flag, env_id=env_id
+                    )
                 self.replay_buffer.add(
                     obs=obs,
                     obs_action_mask=obs_action_mask,
                     action=action,
                     reward=vec_reward,
-                    next_obs=next_obs if not (terminated or truncated) else info["terminal_observation"],
+                    next_obs=next_obs if not done_flag else info["terminal_observation"],
                     next_obs_action_mask=next_obs_action_mask,
-                    done=terminated or truncated
+                    done=done_flag,
+                    transition_extras=transition_extras,
                 )
                 self.global_step += 1
 
@@ -860,6 +901,8 @@ class VecEnvelope(MOPolicy, MOAgent):
                 if vec_terminated[idx] or vec_truncated[idx]:
                     if vec_truncated[idx]:
                         iteration_num_invalid_episodes += 1  # In nxg, invalid episodes are indicated with truncated to True
+                    if self.transition_metadata_collector is not None:
+                        self.transition_metadata_collector.reset(env_id=idx)
                     episode_lens.append(episode_steps[idx])
                     episode_steps[idx] = 0
 

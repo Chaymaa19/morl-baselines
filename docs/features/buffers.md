@@ -29,3 +29,13 @@ Multiple implementations of replay buffers are available in the library. These a
 .. autoclass:: morl_baselines.common.accrued_reward_buffer.AccruedRewardReplayBuffer
     :members:
 ```
+
+## Prioritized Masked Replay Buffer (action masks)
+
+```{eval-rst}
+.. autoclass:: morl_baselines.common.prioritized_masked_buffer.PrioritizedMaskedReplayBuffer
+    :members:
+```
+
+Optional ``extra_fields`` store named float vectors per transition (for weight-conditioned reward transforms in Envelope).
+See ``morl_baselines.common.transition_metadata.TransitionMetadataCollector``.
